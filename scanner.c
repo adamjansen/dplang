@@ -1,0 +1,259 @@
+#include "scanner.h"
+#include <stdlib.h>
+#include <ctype.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdio.h>
+
+int scanner_init(struct scanner *scanner, const char *source)
+{
+    scanner->start = source;
+    scanner->current = source;
+    scanner->line = 1;
+    return 0;
+}
+
+static bool is_at_end(struct scanner *scanner)
+{
+    return *scanner->current == '\0';
+}
+
+static char advance(struct scanner *scanner)
+{
+    char c = *scanner->current;
+    scanner->current++;
+    return c;
+}
+
+static char peek(struct scanner *scanner)
+{
+    return *scanner->current;
+}
+
+static char peek_next(struct scanner *scanner)
+{
+    if (is_at_end(scanner))
+        return '\0';
+    return scanner->current[1];
+}
+
+static bool match(struct scanner *scanner, char expected)
+{
+    if (is_at_end(scanner))
+        return false;
+    if (*scanner->current != expected)
+        return false;
+    scanner->current++;
+    return true;
+}
+
+static struct token make_token(struct scanner *scanner, enum token_type type)
+{
+    struct token token = {
+        .type = type,
+        .start = scanner->start,
+        .length = (int)(scanner->current - scanner->start),
+        .line = scanner->line,
+    };
+
+    return token;
+}
+
+static struct token error_token(struct scanner *scanner, const char *message)
+{
+    struct token token = {
+        .type = TOKEN_ERROR,
+        .start = message,
+        .length = (int)strlen(message),
+        .line = scanner->line,
+    };
+    return token;
+}
+
+static void skip_whitespace(struct scanner *scanner)
+{
+    while (1) {
+        char c = peek(scanner);
+        switch (c) {
+            case ' ':
+            case '\r':
+            case '\t':
+                advance(scanner);
+                break;
+            case '\n':
+                scanner->line++;
+                advance(scanner);
+                break;
+            case '/':
+                if (peek_next(scanner) == '/') {
+                    while (peek(scanner) != '\n' && !is_at_end(scanner)) advance(scanner);
+                } else {
+                    return;
+                }
+                break;
+            default:
+                return;
+        }
+    }
+}
+
+static enum token_type check_keyword(struct scanner *scanner, int start, int length, const char *rest,
+                                     enum token_type type)
+{
+    if (scanner->current - scanner->start == start + length && memcmp(scanner->start + start, rest, length) == 0) {
+        return type;
+    }
+    return TOKEN_IDENTIFIER;
+}
+
+static enum token_type identifier_type(struct scanner *scanner)
+{
+    switch (scanner->start[0]) {
+        case 'a':
+            return check_keyword(scanner, 1, 2, "nd", TOKEN_AND);
+        case 'c':
+            return check_keyword(scanner, 1, 4, "lass", TOKEN_CLASS);
+        case 'e':
+            return check_keyword(scanner, 1, 3, "lse", TOKEN_ELSE);
+        case 'f':
+            if (scanner->current - scanner->start > 1) {
+                switch (scanner->start[1]) {
+                    case 'a':
+                        return check_keyword(scanner, 2, 3, "lse", TOKEN_FALSE);
+                    case 'o':
+                        return check_keyword(scanner, 2, 1, "r", TOKEN_FOR);
+                    case 'u':
+                        return check_keyword(scanner, 2, 2, "nc", TOKEN_FUNC);
+                }
+            }
+            break;
+        case 'i':
+            return check_keyword(scanner, 1, 1, "f", TOKEN_IF);
+        case 'n':
+            return check_keyword(scanner, 1, 2, "il", TOKEN_NIL);
+        case 'o':
+            return check_keyword(scanner, 1, 1, "r", TOKEN_OR);
+        case 'p':
+            return check_keyword(scanner, 1, 4, "rint", TOKEN_PRINT);
+        case 'r':
+            return check_keyword(scanner, 1, 5, "eturn", TOKEN_RETURN);
+        case 's':
+            return check_keyword(scanner, 1, 4, "uper", TOKEN_SUPER);
+        case 't':
+            if (scanner->current - scanner->start > 1) {
+                switch (scanner->start[1]) {
+                    case 'h':
+                        return check_keyword(scanner, 2, 2, "is", TOKEN_THIS);
+                    case 'r':
+                        return check_keyword(scanner, 2, 2, "ue", TOKEN_TRUE);
+                }
+            }
+            break;
+        case 'v':
+            return check_keyword(scanner, 1, 2, "ar", TOKEN_VAR);
+        case 'w':
+            return check_keyword(scanner, 1, 4, "hile", TOKEN_WHILE);
+    }
+    return TOKEN_IDENTIFIER;
+}
+
+struct token identifier(struct scanner *scanner)
+{
+    while (isalnum(peek(scanner)) || peek(scanner) == '_') advance(scanner);
+    return make_token(scanner, identifier_type(scanner));
+}
+
+struct token number(struct scanner *scanner)
+{
+    while (isdigit(peek(scanner))) advance(scanner);
+
+    /* consume fractional part, if any */
+    if (peek(scanner) == '.' && isdigit(peek_next(scanner))) {
+        advance(scanner);
+        while (isdigit(peek(scanner))) advance(scanner);
+    }
+
+    return make_token(scanner, TOKEN_NUMBER);
+}
+
+struct token string(struct scanner *scanner)
+{
+    while (peek(scanner) != '"' && !is_at_end(scanner)) {
+        if (peek(scanner) == '\n')
+            scanner->line++;
+        advance(scanner);
+    }
+    if (is_at_end(scanner))
+        return error_token(scanner, "Unterminated string literal");
+
+    advance(scanner);
+    return make_token(scanner, TOKEN_STRING);
+}
+
+struct token scanner_scan_token(struct scanner *scanner)
+{
+    skip_whitespace(scanner);
+    scanner->start = scanner->current;
+    if (is_at_end(scanner))
+        return make_token(scanner, TOKEN_EOF);
+
+    char c = advance(scanner);
+    if (isalpha(c) || c == '_')
+        return identifier(scanner);
+    if (isdigit(c))
+        return number(scanner);
+    switch (c) {
+        case '(':
+            return make_token(scanner, TOKEN_LEFT_PAREN);
+        case ')':
+            return make_token(scanner, TOKEN_RIGHT_PAREN);
+        case '{':
+            return make_token(scanner, TOKEN_LEFT_BRACE);
+        case '}':
+            return make_token(scanner, TOKEN_RIGHT_BRACE);
+        case ';':
+            return make_token(scanner, TOKEN_SEMICOLON);
+        case ',':
+            return make_token(scanner, TOKEN_COMMA);
+        case '.':
+            return make_token(scanner, TOKEN_DOT);
+        case '-':
+            return make_token(scanner, TOKEN_MINUS);
+        case '+':
+            return make_token(scanner, TOKEN_PLUS);
+        case '/':
+            return make_token(scanner, TOKEN_SLASH);
+        case '*':
+            return make_token(scanner, TOKEN_STAR);
+        case '%':
+            return make_token(scanner, TOKEN_PERCENT);
+        case '^':
+            return make_token(scanner, TOKEN_CARET);
+        case '~':
+            return make_token(scanner, TOKEN_TILDE);
+        case '!':
+            return make_token(scanner, match(scanner, '=') ? TOKEN_BANG_EQUAL : TOKEN_BANG);
+        case '=':
+            return make_token(scanner, match(scanner, '=') ? TOKEN_EQUAL_EQUAL : TOKEN_EQUAL);
+        case '<':
+            if (match(scanner, '=')) {
+                return make_token(scanner, TOKEN_LESS_EQUAL);
+            } else if (match(scanner, '<')) {
+                return make_token(scanner, TOKEN_LESS_LESS);
+            } else {
+                return make_token(scanner, TOKEN_LESS);
+            }
+        case '>':
+            if (match(scanner, '=')) {
+                return make_token(scanner, TOKEN_GREATER_EQUAL);
+            } else if (match(scanner, '>')) {
+                return make_token(scanner, TOKEN_GREATER_GREATER);
+            } else {
+                return make_token(scanner, TOKEN_GREATER);
+            }
+        case '"':
+            return string(scanner);
+    }
+
+    return error_token(scanner, "unexpected character");
+}

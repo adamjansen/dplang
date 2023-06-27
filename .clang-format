@@ -1,0 +1,58 @@
+﻿---
+BasedOnStyle: Microsoft
+AlignAfterOpenBracket: Align
+AlignConsecutiveMacros: 'true'
+AlignConsecutiveAssignments: 'false'
+AlignConsecutiveDeclarations: 'false'
+AlignEscapedNewlines: Left
+AlignOperands: 'true'
+AlignTrailingComments: 'true'
+AllowShortBlocksOnASingleLine: 'true'
+AllowShortCaseLabelsOnASingleLine: 'false'
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: 'true'
+AlwaysBreakAfterReturnType: None
+BreakBeforeBraces: Linux
+BreakStringLiterals: 'true'
+ColumnLimit: '120'
+ConstructorInitializerAllOnOneLineOrOnePerLine: 'true'
+DisableFormat: 'false'
+IncludeBlocks: Regroup
+IncludeCategories:
+    - Regex:    '^"301/CO_.*\.h"$'
+      Priority: -1
+    - Regex:    '^"dp[[:alnum:]]+.h"$'
+      Priority: 4
+    - Regex:    '<[[:alnum:]./]+>'
+      Priority: 1
+    - Regex:    '^"usb_configuration\.h"$'
+      Priority: 2
+    - Regex:    '.*'
+      Priority: 3
+IndentCaseLabels: 'true'
+IndentPPDirectives: None
+IndentWidth: '4'
+IndentWrappedFunctionNames: 'true'
+KeepEmptyLinesAtTheStartOfBlocks: 'false'
+Language: Cpp
+PointerAlignment: Right
+ReflowComments: 'true'
+SortIncludes: 'false'
+SpaceAfterCStyleCast: 'false'
+SpaceAfterLogicalNot: 'false'
+SpaceBeforeAssignmentOperators: 'true'
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: 'false'
+SpacesBeforeTrailingComments: '2'
+SpacesInCStyleCastParentheses: 'false'
+SpacesInParentheses: 'false'
+SpacesInSquareBrackets: 'false'
+Standard: Auto
+TabWidth: '4'
+UseTab: Never
+BinPackArguments: 'true'
+BinPackParameters: 'true'
+AlignArrayOfStructures: Left
+TypenameMacros: ['MAP_LED', 'IO_CHANNEL_DESC']
+...
