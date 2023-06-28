@@ -34,11 +34,16 @@ enum opcode {
     OP_SET_GLOBAL,
     OP_GET_LOCAL,
     OP_SET_LOCAL,
+    OP_GET_UPVALUE,
+    OP_SET_UPVALUE,
     OP_JUMP_IF_FALSE,
     OP_JUMP_IF_TRUE,
     OP_JUMP,
     OP_LOOP,
     OP_PRINT,
+    OP_CALL,
+    OP_CLOSE_UPVALUE,
+    OP_CLOSURE,
     OP_RETURN,
 };
 
@@ -51,8 +56,12 @@ struct chunk {
 };
 
 int chunk_init(struct chunk *chunk);
+int chunk_write_byte(struct chunk *chunk, uint8_t byte, int line);
+int chunk_write_bytes(struct chunk *chunk, uint8_t *bytes, size_t count, int line);
 int chunk_write_opcode(struct chunk *chunk, enum opcode op, void *operands, size_t len, int line);
 int chunk_add_constant(struct chunk *chunk, value val);
 int chunk_free(struct chunk *chunk);
 int chunk_disassemble(struct chunk *chunk, const char *name);
+
+size_t disassemble_instruction(struct chunk *chunk, size_t offset);
 #endif

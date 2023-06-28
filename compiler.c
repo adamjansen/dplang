@@ -2,83 +2,53 @@
 #include "chunk.h"
 #include "scanner.h"
 #include "object.h"
+#include "parser.h"
 #include <string.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
 
-struct parser {
-    struct token current;
-    struct token previous;
-    struct chunk *chunk;
-    struct scanner scanner;
-    struct compiler *compiler;
-    bool had_error;
-    bool panic;
-};
-
-enum precedence {
-    PREC_NONE,
-    PREC_ASSIGNMENT,  // =
-    PREC_OR,          // or
-    PREC_AND,         // and
-    PREC_EQUALITY,    // == !=
-    PREC_COMPARISON,  // < > <= >=
-    PREC_TERM,        // + -
-    PREC_FACTOR,      // * /
-    PREC_UNARY,       // ! -
-    PREC_CALL,        // . ()
-    PREC_PRIMARY,
-};
-
-typedef void (*parse_function)(struct parser *parser, bool assign_ok);
-
-struct parse_rule {
-    parse_function prefix;
-    parse_function infix;
-    enum precedence precedence;
-};
+// #define DEBUG_BYTECODE
 
 struct local {
     struct token name;
     int level;
+    bool is_captured;
+};
+
+struct upvalue {
+    uint8_t index;
+    bool is_local;
+};
+
+enum function_type {
+    TYPE_FUNCTION,
+    TYPE_SCRIPT,
 };
 
 struct compiler {
     struct object_function *function;
+    enum function_type type;
     struct local locals[UINT8_MAX + 1];
+    struct parser *parser;
     size_t nlocals;
+    struct upvalue upvalues[UINT8_MAX + 1];
     int scope_level;
-    struct parser parser;
+    struct compiler *enclosing;
 };
 
-static void grouping(struct parser *parser, bool assign_ok);
-static void binary(struct parser *parser, bool assign_ok);
-static void unary(struct parser *parser, bool assign_ok);
-static void number(struct parser *parser, bool assign_ok);
-static void literal(struct parser *parser, bool assign_ok);
-static void string(struct parser *parser, bool assign_ok);
-static void variable(struct parser *parser, bool assign_ok);
-static void and_(struct parser *parser, bool assign_ok);
-static void or_(struct parser *parser, bool assign_ok);
-
-static void declaration(struct parser *parser);
-static void expression(struct parser *parser);
-static void statement(struct parser *parser);
-static void expression_statement(struct parser *parser);
-static void if_statement(struct parser *parser);
-static void while_statement(struct parser *parser);
-static void for_statement(struct parser *parser);
-static void var_declaration(struct parser *parser);
-
-static void named_variable(struct parser *parser, struct token name, bool assign_ok);
-static bool match(struct parser *parser, enum token_type type);
-
-static void scope_enter(struct compiler *compiler);
-static void scope_exit(struct compiler *compiler);
+static void grouping(struct parser *parser, enum precedence precedence, void *userdata);
+static void binary(struct parser *parser, enum precedence precedence, void *userdata);
+static void unary(struct parser *parser, enum precedence precedence, void *userdata);
+static void number(struct parser *parser, enum precedence precedence, void *userdata);
+static void literal(struct parser *parser, enum precedence precedence, void *userdata);
+static void string(struct parser *parser, enum precedence precedence, void *userdata);
+static void variable(struct parser *parser, enum precedence precedence, void *userdata);
+static void and_(struct parser *parser, enum precedence precedence, void *userdata);
+static void or_(struct parser *parser, enum precedence precedence, void *userdata);
+static void call(struct parser *parser, enum precedence precedence, void *userdata);
 
 struct parse_rule rules[] = {
-    [TOKEN_LEFT_PAREN] = {grouping, NULL,   PREC_NONE      },
+    [TOKEN_LEFT_PAREN] = {grouping, call,   PREC_CALL      },
     [TOKEN_RIGHT_PAREN] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_LEFT_BRACE] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_RIGHT_BRACE] = {NULL,     NULL,   PREC_NONE      },
@@ -125,166 +95,126 @@ struct parse_rule rules[] = {
     [TOKEN_ERROR] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_EOF] = {NULL,     NULL,   PREC_NONE      },
 };
-static struct parse_rule *get_rule(enum token_type type);
-static void parse_precedence(struct parser *parser, enum precedence precedence);
 
-static void error_at(struct parser *parser, struct token *token, const char *message)
+struct parse_rule *parser_get_rule(enum token_type type)
 {
-    if (parser->panic)
-        return;
-    parser->panic = true;
-    fprintf(stderr, "[line %u] error", token->line);
-
-    if (token->type == TOKEN_EOF) {
-        fprintf(stderr, " at end");
-    } else if (token->type == TOKEN_ERROR) {
-    } else {
-        fprintf(stderr, " at '%.*s'", token->length, token->start);
-    }
-
-    fprintf(stderr, ": %s\n", message);
-    parser->had_error = true;
+    return &rules[type];
 }
 
-static void error(struct parser *parser, const char *message)
+static void declaration(struct compiler *compiler);
+static void expression(struct compiler *compiler);
+static void statement(struct compiler *compiler);
+static void expression_statement(struct compiler *compiler);
+static void if_statement(struct compiler *compiler);
+static void while_statement(struct compiler *compiler);
+static void for_statement(struct compiler *compiler);
+static void var_declaration(struct compiler *compiler);
+
+static void named_variable(struct compiler *compiler, struct token name, bool assign_ok);
+
+static void scope_enter(struct compiler *compiler);
+static void scope_exit(struct compiler *compiler);
+
+static struct object_function *end(struct compiler *compiler);
+
+static inline void emit_opcode_args(struct compiler *compiler, enum opcode op, void *operands, size_t length)
 {
-    error_at(parser, &parser->previous, message);
+    chunk_write_opcode(&compiler->function->chunk, op, operands, length, compiler->parser->previous.line);
 }
 
-static void error_at_current(struct parser *parser, const char *message)
+static inline void emit_opcode(struct compiler *compiler, enum opcode op)
 {
-    error_at(parser, &parser->current, message);
+    chunk_write_byte(&compiler->function->chunk, op, compiler->parser->previous.line);
 }
 
-static void advance(struct parser *parser)
+static inline void emit_byte(struct compiler *compiler, uint8_t b)
 {
-    parser->previous = parser->current;
-
-    while (1) {
-        parser->current = scanner_scan_token(&parser->scanner);
-        if (parser->current.type != TOKEN_ERROR)
-            break;
-
-        error_at_current(parser, parser->current.start);
-    }
+    chunk_write_byte(&compiler->function->chunk, b, compiler->parser->previous.line);
 }
 
-static void consume(struct parser *parser, enum token_type type, const char *message)
+static inline void emit_loop(struct compiler *compiler, int loop_start)
 {
-    if (parser->current.type == type) {
-        advance(parser);
-        return;
-    }
-    error_at_current(parser, message);
-}
-
-static bool check(struct parser *parser, enum token_type type)
-{
-    return parser->current.type == type;
-}
-
-static bool match(struct parser *parser, enum token_type type)
-{
-    if (!check(parser, type))
-        return false;
-    advance(parser);
-    return true;
-}
-
-static inline void emit_opcode_args(struct parser *parser, enum opcode op, void *operands, size_t length)
-{
-    chunk_write_opcode(parser->chunk, op, operands, length, parser->previous.line);
-}
-
-static inline void emit_opcode(struct parser *parser, enum opcode op)
-{
-    emit_opcode_args(parser, op, NULL, 0);
-}
-
-static inline void emit_loop(struct parser *parser, int loop_start)
-{
-    uint16_t offset = parser->chunk->count - loop_start + 3;
+    uint16_t offset = compiler->function->chunk.count - loop_start + 3;
     if (offset > UINT16_MAX)
-        error(parser, "Loop body too large");
+        parser_error(compiler->parser, "Loop body too large");
 
-    emit_opcode_args(parser, OP_LOOP, &offset, sizeof(offset));
+    emit_opcode_args(compiler, OP_LOOP, &offset, sizeof(offset));
 }
 
-static inline int emit_jump(struct parser *parser, enum opcode jmp)
+static inline int emit_jump(struct compiler *compiler, enum opcode jmp)
 {
     uint16_t dummy = 0xFFFF;
-    emit_opcode_args(parser, jmp, &dummy, sizeof(dummy));
-    return parser->chunk->count - 2;  // offset of to-be-patched jump destination
+    emit_opcode_args(compiler, jmp, &dummy, sizeof(dummy));
+    return compiler->function->chunk.count - 2;  // offset of to-be-patched jump destination
 }
 
-static void patch_jump(struct parser *parser, int offset)
+static void patch_jump(struct compiler *compiler, int offset)
 {
     // account for byte of the jump offset itsefl
-    int size = parser->chunk->count - offset - 2;
+    int size = compiler->function->chunk.count - offset - 2;
 
     if (size > UINT16_MAX) {
-        error(parser, "Too much code for jump");
+        parser_error(compiler->parser, "Too much code for jump");
     }
 
-    parser->chunk->code[offset] = (size >> 8) & 0xFF;
-    parser->chunk->code[offset + 1] = size & 0xFF;
+    compiler->function->chunk.code[offset] = (size >> 8) & 0xFF;
+    compiler->function->chunk.code[offset + 1] = size & 0xFF;
 }
 
-static void compiler_init(struct compiler *compiler, struct chunk *chunk, const char *source)
+static void emit_return(struct compiler *compiler)
 {
-    compiler->parser.chunk = chunk;
-    compiler->parser.had_error = false;
-    compiler->parser.panic = false;
-    compiler->parser.compiler = compiler;
-
-    chunk_init(chunk);
-
-    scanner_init(&compiler->parser.scanner, source);
-
-    compiler->nlocals = 0;
-    compiler->scope_level = 0;
+    emit_opcode(compiler, OP_NIL);
+    emit_opcode(compiler, OP_RETURN);
 }
 
-static void parse_precedence(struct parser *parser, enum precedence precedence)
+static uint8_t make_constant(struct compiler *compiler, value value)
 {
-    advance(parser);
-    parse_function prefix_rule = get_rule(parser->previous.type)->prefix;
-    if (prefix_rule == NULL) {
-        error(parser, "Expected expression");
-        return;
+    int ret = chunk_add_constant(&compiler->function->chunk, value);
+    if (ret > UINT8_MAX) {
+        parser_error(compiler->parser, "Too many constants in one chunk");
+        return 0;
     }
-
-    // only allow assignment in low-precedence expressions
-    bool assign_ok = precedence <= PREC_ASSIGNMENT;
-
-    prefix_rule(parser, assign_ok);
-
-    while (precedence <= get_rule(parser->current.type)->precedence) {
-        advance(parser);
-        parse_function infix_rule = get_rule(parser->previous.type)->infix;
-        infix_rule(parser, assign_ok);
-    }
-
-    if (assign_ok && match(parser, TOKEN_EQUAL)) {
-        error(parser, "Invalid assignment target");
-    }
-}
-
-static uint8_t identifier_constant(struct parser *parser, struct token *name)
-{
-    int ret = chunk_add_constant(parser->chunk, OBJECT_VAL(object_string_allocate(name->start, name->length)));
     return (uint8_t)ret;
 }
 
-static void add_local(struct parser *parser, struct token name)
+static void compiler_init(struct compiler *compiler, struct parser *parser, enum function_type type)
 {
-    if (parser->compiler->nlocals > UINT8_MAX) {
-        error(parser, "Too many local variables in function");
+    compiler->function = NULL;
+    compiler->type = type;
+    compiler->parser = parser;
+    compiler->enclosing = NULL;
+
+    compiler->nlocals = 0;
+    compiler->scope_level = 0;
+
+    compiler->function = object_function_new();
+
+    if (type != TYPE_SCRIPT) {
+        compiler->function->name =
+            object_string_allocate(compiler->parser->previous.start, compiler->parser->previous.length);
+    }
+    struct local *local = &compiler->locals[compiler->nlocals++];
+    local->level = 0;
+    local->is_captured = false;
+    local->name.start = "";
+    local->name.length = 0;
+}
+
+static uint8_t identifier_constant(struct compiler *compiler, struct token *name)
+{
+    return make_constant(compiler, OBJECT_VAL(object_string_allocate(name->start, name->length)));
+}
+
+static void add_local(struct compiler *compiler, struct token name)
+{
+    if (compiler->nlocals > UINT8_MAX) {
+        parser_error(compiler->parser, "Too many local variables in function");
         return;
     }
-    struct local *local = &parser->compiler->locals[parser->compiler->nlocals++];
+    struct local *local = &compiler->locals[compiler->nlocals++];
     local->name = name;
     local->level = -1;  // -1 indicates uninitialized
+    local->is_captured = false;
 }
 
 static bool identifiers_equal(struct token *a, struct token *b)
@@ -300,409 +230,537 @@ static int resolve_local(struct compiler *compiler, struct token *name)
         struct local *local = &compiler->locals[i];
         if (identifiers_equal(name, &local->name)) {
             if (local->level == -1)
-                error(&compiler->parser, "Can't read local in its own initializer");
+                parser_error(compiler->parser, "Can't read local in its own initializer");
             return i;
         }
     }
     return -1;
 }
 
-static void declare_variable(struct parser *parser)
+static int add_upvalue(struct compiler *compiler, uint8_t index, bool is_local)
 {
-    if (parser->compiler->scope_level == 0)
+    int nupvalues = compiler->function->nupvalues;
+    // Check to see if upvalue was already added for same variable
+    for (int i = 0; i < nupvalues; i++) {
+        struct upvalue *upvalue = &compiler->upvalues[i];
+        if (upvalue->index == index && upvalue->is_local == is_local) {
+            return i;
+        }
+    }
+
+    if (nupvalues > UINT8_MAX) {
+        parser_error(compiler->parser, "Too many closure variables in function");
+        return 0;
+    }
+    compiler->upvalues[nupvalues].is_local = is_local;
+    compiler->upvalues[nupvalues].index = index;
+    return compiler->function->nupvalues++;
+}
+
+static int resolve_upvalue(struct compiler *compiler, struct token *name)
+{
+    if (compiler->enclosing == NULL)
+        return -1;  // no upvalues at top-level scope
+
+    int local = resolve_local(compiler->enclosing, name);
+    if (local != -1) {
+        compiler->enclosing->locals[local].is_captured = true;
+        return add_upvalue(compiler, (uint8_t)local, true);
+    }
+
+    int upvalue = resolve_upvalue(compiler->enclosing, name);
+    if (upvalue != -1) {
+        return add_upvalue(compiler, (uint8_t)upvalue, false);
+    }
+
+    return -1;
+}
+
+static void declare_variable(struct compiler *compiler)
+{
+    if (compiler->scope_level == 0)
         return;
 
-    struct token *name = &parser->previous;
+    struct token *name = &compiler->parser->previous;
 
-    for (int i = parser->compiler->nlocals - 1; i >= 0; i--) {
-        struct local *local = &parser->compiler->locals[i];
-        if (local->level != -1 && local->level < parser->compiler->scope_level) {
+    for (int i = compiler->nlocals - 1; i >= 0; i--) {
+        struct local *local = &compiler->locals[i];
+        if (local->level != -1 && local->level < compiler->scope_level) {
             break;
         }
 
         if (identifiers_equal(name, &local->name)) {
-            error(parser, "Variable is already defined in this scope");
+            parser_error(compiler->parser, "Variable is already defined in this scope");
         }
     }
-    add_local(parser, *name);
+    add_local(compiler, *name);
 }
 
-static uint8_t parse_variable(struct parser *parser, const char *errmsg)
+static uint8_t parse_variable(struct compiler *compiler, const char *errmsg)
 {
-    consume(parser, TOKEN_IDENTIFIER, errmsg);
-    declare_variable(parser);
+    parser_consume(compiler->parser, TOKEN_IDENTIFIER, errmsg);
+    declare_variable(compiler);
 
     /* Locals aren't looked up by name at runtime, so
      * they don't need to be entered into the constant table
      */
-    if (parser->compiler->scope_level > 0)
+    if (compiler->scope_level > 0)
         return 0;
 
-    return identifier_constant(parser, &parser->previous);
+    return identifier_constant(compiler, &compiler->parser->previous);
 }
 
-static void define_variable(struct parser *parser, uint8_t global)
+static void mark_initialized(struct compiler *compiler)
+{
+    if (compiler->scope_level == 0)
+        return;
+    compiler->locals[compiler->nlocals - 1].level = compiler->scope_level;
+}
+
+static void define_variable(struct compiler *compiler, uint8_t global)
 {
     // Local variables don't have associated runtime code for declaration
-    if (parser->compiler->scope_level > 0) {
-        // Mark as initialized
-        parser->compiler->locals[parser->compiler->nlocals - 1].level = parser->compiler->scope_level;
+    if (compiler->scope_level > 0) {
+        mark_initialized(compiler);
         return;
     }
-    emit_opcode_args(parser, OP_DEFINE_GLOBAL, &global, sizeof(global));
+    emit_opcode_args(compiler, OP_DEFINE_GLOBAL, &global, sizeof(global));
 }
 
-static void and_(struct parser *parser, bool assign_ok)
+static uint8_t argument_list(struct compiler *compiler)
 {
-    int end_jump = emit_jump(parser, OP_JUMP_IF_FALSE);
-    emit_opcode(parser, OP_POP);
-    parse_precedence(parser, PREC_AND);
-
-    patch_jump(parser, end_jump);
-}
-
-static struct parse_rule *get_rule(enum token_type type)
-{
-    return &rules[type];
-}
-
-static void expression(struct parser *parser)
-{
-    parse_precedence(parser, PREC_ASSIGNMENT);
-}
-
-static void block(struct parser *parser)
-{
-    while (!check(parser, TOKEN_RIGHT_BRACE) && !check(parser, TOKEN_EOF)) { declaration(parser); }
-
-    consume(parser, TOKEN_RIGHT_BRACE, "Expect '}' after block");
-}
-
-static void var_declaration(struct parser *parser)
-{
-    uint8_t global = parse_variable(parser, "Expect variable name");
-
-    if (match(parser, TOKEN_EQUAL)) {
-        expression(parser);
-    } else {
-        emit_opcode(parser, OP_NIL);
+    uint8_t arg_count = 0;
+    if (!parser_check(compiler->parser, TOKEN_RIGHT_PAREN)) {
+        do {
+            expression(compiler);
+            if (arg_count == 255) {
+                parser_error(compiler->parser, "Can't pass more than 255 arguments");
+            }
+            arg_count++;
+        } while (parser_match(compiler->parser, TOKEN_COMMA));
     }
-    consume(parser, TOKEN_SEMICOLON, "Expect ';' after variable declaration");
-
-    define_variable(parser, global);
+    parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after arguments");
+    return arg_count;
 }
 
-static void expression_statement(struct parser *parser)
+static void expression(struct compiler *compiler)
 {
-    expression(parser);
-    consume(parser, TOKEN_SEMICOLON, "Expect ';' after expression");
-    emit_opcode(parser, OP_POP);
+    parser_precedence(compiler->parser, PREC_ASSIGNMENT, compiler);
 }
 
-static void for_statement(struct parser *parser)
+static void block(struct compiler *compiler)
 {
-    scope_enter(parser->compiler);
-    consume(parser, TOKEN_LEFT_PAREN, "Expect '(' after 'for'");
-    if (match(parser, TOKEN_SEMICOLON)) {
+    while (!parser_check(compiler->parser, TOKEN_RIGHT_BRACE) && !parser_check(compiler->parser, TOKEN_EOF)) {
+        declaration(compiler);
+    }
+
+    parser_consume(compiler->parser, TOKEN_RIGHT_BRACE, "Expect '}' after block");
+}
+
+static void function(struct compiler *compiler, enum function_type type)
+{
+    struct compiler inner;
+    compiler_init(&inner, compiler->parser, type);
+    inner.enclosing = compiler;
+    scope_enter(&inner);
+
+    parser_consume(inner.parser, TOKEN_LEFT_PAREN, "Expect '(' after function name");
+    // gather arguments, if any
+    if (!parser_check(inner.parser, TOKEN_RIGHT_PAREN)) {
+        do {
+            inner.function->arity++;
+            if (inner.function->arity > 255) {
+                parser_error_at_current(inner.parser, "Can't have more than 255 parameters");
+            }
+            uint8_t constant = parse_variable(&inner, "Expect parameter name");
+            define_variable(&inner, constant);
+        } while (parser_match(inner.parser, TOKEN_COMMA));
+    }
+    parser_consume(inner.parser, TOKEN_RIGHT_PAREN, "Expect ')' after parameters");
+    parser_consume(inner.parser, TOKEN_LEFT_BRACE, "Expect '{' before function body");
+    block(&inner);
+
+    struct object_function *function = end(&inner);
+
+    uint8_t constant = make_constant(compiler, OBJECT_VAL(function));
+    emit_opcode_args(compiler, OP_CLOSURE, &constant, sizeof(constant));
+
+    for (int i = 0; i < function->nupvalues; i++) {
+        emit_byte(compiler, inner.upvalues[i].is_local ? 1 : 0);
+        emit_byte(compiler, inner.upvalues[i].index);
+    }
+}
+
+static void func_declaration(struct compiler *compiler)
+{
+    uint8_t global = parse_variable(compiler, "Expected function name");
+    mark_initialized(compiler);
+    function(compiler, TYPE_FUNCTION);
+    define_variable(compiler, global);
+}
+
+static void var_declaration(struct compiler *compiler)
+{
+    uint8_t global = parse_variable(compiler, "Expect variable name");
+
+    if (parser_match(compiler->parser, TOKEN_EQUAL)) {
+        expression(compiler);
+    } else {
+        emit_opcode(compiler, OP_NIL);
+    }
+    parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after variable declaration");
+
+    define_variable(compiler, global);
+}
+
+static void expression_statement(struct compiler *compiler)
+{
+    expression(compiler);
+    parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after expression");
+    emit_opcode(compiler, OP_POP);
+}
+
+static void for_statement(struct compiler *compiler)
+{
+    scope_enter(compiler);
+    parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'for'");
+    if (parser_match(compiler->parser, TOKEN_SEMICOLON)) {
         // no initializer
-    } else if (match(parser, TOKEN_VAR)) {
-        var_declaration(parser);
+    } else if (parser_match(compiler->parser, TOKEN_VAR)) {
+        var_declaration(compiler);
     } else {
-        expression_statement(parser);
+        expression_statement(compiler);
     }
 
-    int loop_start = parser->chunk->count;
+    int loop_start = compiler->function->chunk.count;
     int exit_jump = -1;
 
-    if (!match(parser, TOKEN_SEMICOLON)) {
-        expression(parser);
-        consume(parser, TOKEN_SEMICOLON, "Expect ';' after loop condition");
-        exit_jump = emit_jump(parser, OP_JUMP_IF_FALSE);
-        emit_opcode(parser, OP_POP);
+    if (!parser_match(compiler->parser, TOKEN_SEMICOLON)) {
+        expression(compiler);
+        parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after loop condition");
+        exit_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
+        emit_opcode(compiler, OP_POP);
     }
 
-    if (!match(parser, TOKEN_RIGHT_PAREN)) {
-        int body_jump = emit_jump(parser, OP_JUMP);
-        int increment_start = parser->chunk->count;
-        expression(parser);
-        emit_opcode(parser, OP_POP);
-        consume(parser, TOKEN_RIGHT_PAREN, "Expect ')' after for clauses");
-        emit_loop(parser, loop_start);
+    if (!parser_match(compiler->parser, TOKEN_RIGHT_PAREN)) {
+        int body_jump = emit_jump(compiler, OP_JUMP);
+        int increment_start = compiler->function->chunk.count;
+        expression(compiler);
+        emit_opcode(compiler, OP_POP);
+        parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after for clauses");
+        emit_loop(compiler, loop_start);
         loop_start = increment_start;
-        patch_jump(parser, body_jump);
+        patch_jump(compiler, body_jump);
     }
 
-    statement(parser);
-    emit_loop(parser, loop_start);
+    statement(compiler);
+    emit_loop(compiler, loop_start);
 
     if (exit_jump != -1) {
-        patch_jump(parser, exit_jump);
-        emit_opcode(parser, OP_POP);
+        patch_jump(compiler, exit_jump);
+        emit_opcode(compiler, OP_POP);
     }
 
-    scope_exit(parser->compiler);
+    scope_exit(compiler);
 }
 
-static void if_statement(struct parser *parser)
+static void if_statement(struct compiler *compiler)
 {
-    consume(parser, TOKEN_LEFT_PAREN, "Expect '(' after 'if'");
-    expression(parser);
-    consume(parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition'");
+    parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'if'");
+    expression(compiler);
+    parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition'");
 
-    int then_jump = emit_jump(parser, OP_JUMP_IF_FALSE);
-    emit_opcode(parser, OP_POP);
-    statement(parser);
+    int then_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
+    emit_opcode(compiler, OP_POP);
+    statement(compiler);
 
-    int else_jump = emit_jump(parser, OP_JUMP);
-    patch_jump(parser, then_jump);
-    emit_opcode(parser, OP_POP);
+    int else_jump = emit_jump(compiler, OP_JUMP);
+    patch_jump(compiler, then_jump);
+    emit_opcode(compiler, OP_POP);
 
-    if (match(parser, TOKEN_ELSE))
-        statement(parser);
-    patch_jump(parser, else_jump);
+    if (parser_match(compiler->parser, TOKEN_ELSE))
+        statement(compiler);
+    patch_jump(compiler, else_jump);
 }
 
-static void print_statement(struct parser *parser)
+static void print_statement(struct compiler *compiler)
 {
-    expression(parser);
-    consume(parser, TOKEN_SEMICOLON, "Expect ';' after value");
-    emit_opcode(parser, OP_PRINT);
+    expression(compiler);
+    parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after value");
+    emit_opcode(compiler, OP_PRINT);
 }
 
-static void while_statement(struct parser *parser)
+static void return_statement(struct compiler *compiler)
 {
-    int loop_start = parser->chunk->count;
-    consume(parser, TOKEN_LEFT_PAREN, "Expect '(' after 'while'");
-    expression(parser);
-    consume(parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition");
-
-    int exit_jump = emit_jump(parser, OP_JUMP_IF_FALSE);
-    emit_opcode(parser, OP_POP);
-    statement(parser);
-
-    emit_loop(parser, loop_start);
-
-    patch_jump(parser, exit_jump);
-    emit_opcode(parser, OP_POP);
-}
-
-static void synchronize(struct parser *parser)
-{
-    parser->panic = false;
-
-    while (parser->current.type != TOKEN_EOF) {
-        if (parser->previous.type == TOKEN_SEMICOLON)
-            return;
-        switch (parser->current.type) {
-            case TOKEN_CLASS:
-            case TOKEN_FUNC:
-            case TOKEN_VAR:
-            case TOKEN_FOR:
-            case TOKEN_IF:
-            case TOKEN_WHILE:
-            case TOKEN_PRINT:
-            case TOKEN_RETURN:
-                return;
-            default:
-                break;
-        }
-        advance(parser);
+    if (compiler->type == TYPE_SCRIPT) {
+        parser_error(compiler->parser, "Can't return from top-level code");
     }
-}
-
-static void declaration(struct parser *parser)
-{
-    if (match(parser, TOKEN_VAR)) {
-        var_declaration(parser);
+    if (parser_match(compiler->parser, TOKEN_SEMICOLON)) {
+        emit_return(compiler);
     } else {
-        statement(parser);
+        expression(compiler);
+        parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after return value");
+        emit_opcode(compiler, OP_RETURN);
     }
-
-    if (parser->panic)
-        synchronize(parser);
 }
 
-static void statement(struct parser *parser)
+static void while_statement(struct compiler *compiler)
 {
-    if (match(parser, TOKEN_PRINT)) {
-        print_statement(parser);
-    } else if (match(parser, TOKEN_FOR)) {
-        for_statement(parser);
-    } else if (match(parser, TOKEN_IF)) {
-        if_statement(parser);
-    } else if (match(parser, TOKEN_WHILE)) {
-        while_statement(parser);
-    } else if (match(parser, TOKEN_LEFT_BRACE)) {
-        scope_enter(parser->compiler);
-        block(parser);
-        scope_exit(parser->compiler);
+    int loop_start = compiler->function->chunk.count;
+    parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'while'");
+    expression(compiler);
+    parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition");
+
+    int exit_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
+    emit_opcode(compiler, OP_POP);
+    statement(compiler);
+
+    emit_loop(compiler, loop_start);
+
+    patch_jump(compiler, exit_jump);
+    emit_opcode(compiler, OP_POP);
+}
+
+static void declaration(struct compiler *compiler)
+{
+    if (parser_match(compiler->parser, TOKEN_FUNC)) {
+        func_declaration(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_VAR)) {
+        var_declaration(compiler);
     } else {
-        expression_statement(parser);
+        statement(compiler);
     }
+
+    if (compiler->parser->panic)
+        parser_synchronize(compiler->parser);
 }
 
-static void number(struct parser *parser, bool assign_ok)
+static void statement(struct compiler *compiler)
 {
-    double val = strtod(parser->previous.start, NULL);
-    int ret = chunk_add_constant(parser->chunk, NUMBER_VAL(val));
-    if (ret > UINT8_MAX) {
-        error(parser, "too many constants in chunk");
-        ret = 0;
-    }
-    uint8_t constant = (uint8_t)ret;
-
-    emit_opcode_args(parser, OP_CONSTANT, &constant, sizeof(constant));
-}
-
-static void or_(struct parser *parser, bool assign_ok)
-{
-    int end_jump = emit_jump(parser, OP_JUMP_IF_TRUE);
-    emit_opcode(parser, OP_POP);
-    parse_precedence(parser, PREC_OR);
-
-    patch_jump(parser, end_jump);
-}
-
-static void string(struct parser *parser, bool assign_ok)
-{
-    // TODO: Handle escape sequences
-    struct object_string *s = object_string_allocate(parser->previous.start + 1, parser->previous.length - 2);
-    int ret = chunk_add_constant(parser->chunk, OBJECT_VAL(s));
-    if (ret > UINT8_MAX) {
-        error(parser, "too many constants in chunk");
-        ret = 0;
-    }
-    uint8_t constant = (uint8_t)ret;
-    emit_opcode_args(parser, OP_CONSTANT, &constant, sizeof(constant));
-}
-
-static void named_variable(struct parser *parser, struct token name, bool assign_ok)
-{
-    uint8_t arg = resolve_local(parser->compiler, &name);
-    bool global = arg == -1;
-
-    if (assign_ok && match(parser, TOKEN_EQUAL)) {
-        expression(parser);
-        emit_opcode_args(parser, global ? OP_SET_GLOBAL : OP_SET_LOCAL, &arg, sizeof(arg));
+    if (parser_match(compiler->parser, TOKEN_PRINT)) {
+        print_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_FOR)) {
+        for_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_IF)) {
+        if_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_RETURN)) {
+        return_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_WHILE)) {
+        while_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_LEFT_BRACE)) {
+        scope_enter(compiler);
+        block(compiler);
+        scope_exit(compiler);
     } else {
-        emit_opcode_args(parser, global ? OP_GET_GLOBAL : OP_GET_LOCAL, &arg, sizeof(arg));
+        expression_statement(compiler);
     }
 }
 
-static void variable(struct parser *parser, bool assign_ok)
+static void named_variable(struct compiler *compiler, struct token name, bool assign_ok)
 {
-    named_variable(parser, parser->previous, assign_ok);
-}
+    enum opcode op_get;
+    enum opcode op_set;
 
-static void literal(struct parser *parser, bool assign_ok)
-{
-    switch (parser->previous.type) {
-        case TOKEN_FALSE:
-            emit_opcode(parser, OP_FALSE);
-            break;
-        case TOKEN_TRUE:
-            emit_opcode(parser, OP_TRUE);
-            break;
-        case TOKEN_NIL:
-            emit_opcode(parser, OP_NIL);
-            break;
-        default:
-            break;
+    int ret = resolve_local(compiler, &name);
+    if (ret != -1) {
+        // It's a local variable
+        op_get = OP_GET_LOCAL;
+        op_set = OP_SET_LOCAL;
+    } else if ((ret = resolve_upvalue(compiler, &name)) != -1) {
+        op_get = OP_GET_UPVALUE;
+        op_set = OP_SET_UPVALUE;
+    } else {
+        op_get = OP_GET_GLOBAL;
+        op_set = OP_SET_GLOBAL;
+        ret = identifier_constant(compiler, &name);
+    }
+
+    uint8_t arg = (uint8_t)ret;
+
+    if (assign_ok && parser_match(compiler->parser, TOKEN_EQUAL)) {
+        expression(compiler);
+        emit_opcode_args(compiler, op_set, &arg, sizeof(arg));
+    } else {
+        emit_opcode_args(compiler, op_get, &arg, sizeof(arg));
     }
 }
 
-static void grouping(struct parser *parser, bool assign_ok)
+static void grouping(struct parser *parser, enum precedence precedence, void *userdata)
 {
-    expression(parser);
-    consume(parser, TOKEN_RIGHT_PAREN, "Expect ')' after expression");
+    struct compiler *compiler = (struct compiler *)userdata;
+    expression(compiler);
+    parser_consume(parser, TOKEN_RIGHT_PAREN, "Expect ')' after expression");
 }
 
-static void binary(struct parser *parser, bool assign_ok)
+static void binary(struct parser *parser, enum precedence precedence, void *userdata)
 {
+    struct compiler *compiler = (struct compiler *)userdata;
     enum token_type operator_type = parser->previous.type;
 
-    struct parse_rule *rule = get_rule(operator_type);
+    struct parse_rule *rule = parser_get_rule(operator_type);
 
-    parse_precedence(parser, (enum precedence)(rule->precedence + 1));
+    parser_precedence(parser, (enum precedence)(rule->precedence + 1), compiler);
 
     switch (operator_type) {
         case TOKEN_PLUS:
-            emit_opcode(parser, OP_ADD);
+            emit_opcode(compiler, OP_ADD);
             break;
         case TOKEN_MINUS:
-            emit_opcode(parser, OP_SUBTRACT);
+            emit_opcode(compiler, OP_SUBTRACT);
             break;
         case TOKEN_STAR:
-            emit_opcode(parser, OP_MULTIPLY);
+            emit_opcode(compiler, OP_MULTIPLY);
             break;
         case TOKEN_PERCENT:
-            emit_opcode(parser, OP_MOD);
+            emit_opcode(compiler, OP_MOD);
             break;
         case TOKEN_SLASH:
-            emit_opcode(parser, OP_DIVIDE);
+            emit_opcode(compiler, OP_DIVIDE);
             break;
         case TOKEN_BANG_EQUAL:
-            emit_opcode(parser, OP_EQUAL);
-            emit_opcode(parser, OP_NOT);
+            emit_opcode(compiler, OP_EQUAL);
+            emit_opcode(compiler, OP_NOT);
             break;
         case TOKEN_EQUAL_EQUAL:
-            emit_opcode(parser, OP_EQUAL);
+            emit_opcode(compiler, OP_EQUAL);
             break;
         case TOKEN_GREATER:
-            emit_opcode(parser, OP_GREATER);
+            emit_opcode(compiler, OP_GREATER);
             break;
         case TOKEN_GREATER_GREATER:
-            emit_opcode(parser, OP_SHR);
+            emit_opcode(compiler, OP_SHR);
             break;
         case TOKEN_GREATER_EQUAL:
-            emit_opcode(parser, OP_LESS);
-            emit_opcode(parser, OP_NOT);
+            emit_opcode(compiler, OP_LESS);
+            emit_opcode(compiler, OP_NOT);
             break;
         case TOKEN_LESS:
-            emit_opcode(parser, OP_LESS);
+            emit_opcode(compiler, OP_LESS);
             break;
         case TOKEN_LESS_LESS:
-            emit_opcode(parser, OP_SHL);
+            emit_opcode(compiler, OP_SHL);
             break;
         case TOKEN_LESS_EQUAL:
-            emit_opcode(parser, OP_GREATER);
-            emit_opcode(parser, OP_NOT);
+            emit_opcode(compiler, OP_GREATER);
+            emit_opcode(compiler, OP_NOT);
             break;
         case TOKEN_AND:
-            emit_opcode(parser, OP_AND);
+            emit_opcode(compiler, OP_AND);
             break;
         case TOKEN_OR:
-            emit_opcode(parser, OP_OR);
+            emit_opcode(compiler, OP_OR);
             break;
         case TOKEN_CARET:
-            emit_opcode(parser, OP_XOR);
+            emit_opcode(compiler, OP_XOR);
             break;
         default:
             return;
     }
 }
 
-static void unary(struct parser *parser, bool assign_ok)
+static void call(struct parser *parser, enum precedence precedence, void *userdata)
 {
+    struct compiler *compiler = (struct compiler *)userdata;
+
+    uint8_t arg_count = argument_list(compiler);
+    emit_opcode_args(compiler, OP_CALL, &arg_count, sizeof(arg_count));
+}
+
+static void unary(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
     enum token_type operator_type = parser->previous.type;
 
-    parse_precedence(parser, PREC_UNARY);
+    parser_precedence(parser, PREC_UNARY, compiler);
 
     switch (operator_type) {
         case TOKEN_MINUS:
-            emit_opcode(parser, OP_NEGATE);
+            emit_opcode(compiler, OP_NEGATE);
             break;
         case TOKEN_BANG:
-            emit_opcode(parser, OP_NOT);
+            emit_opcode(compiler, OP_NOT);
             break;
         default:
             break;
     }
 }
 
-static void end(struct parser *parser)
+static void number(struct parser *parser, enum precedence precedence, void *userdata)
 {
-    emit_opcode(parser, OP_RETURN);
+    struct compiler *compiler = (struct compiler *)userdata;
+    double val = strtod(parser->previous.start, NULL);
+    uint8_t constant = make_constant(compiler, NUMBER_VAL(val));
+
+    emit_opcode_args(compiler, OP_CONSTANT, &constant, sizeof(constant));
+}
+
+static void literal(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+    switch (parser->previous.type) {
+        case TOKEN_FALSE:
+            emit_opcode(compiler, OP_FALSE);
+            break;
+        case TOKEN_TRUE:
+            emit_opcode(compiler, OP_TRUE);
+            break;
+        case TOKEN_NIL:
+            emit_opcode(compiler, OP_NIL);
+            break;
+        default:
+            break;
+    }
+}
+
+static void string(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+
+    // TODO: Handle escape sequences
+
+    struct object_string *s = object_string_allocate(parser->previous.start + 1, parser->previous.length - 2);
+    uint8_t constant = make_constant(compiler, OBJECT_VAL(s));
+    emit_opcode_args(compiler, OP_CONSTANT, &constant, sizeof(constant));
+}
+
+static void variable(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+    bool assign_ok = precedence <= PREC_ASSIGNMENT;
+    named_variable(compiler, parser->previous, assign_ok);
+}
+
+static void and_(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+    int end_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
+    emit_opcode(compiler, OP_POP);
+    parser_precedence(parser, PREC_AND, compiler);
+
+    patch_jump(compiler, end_jump);
+}
+
+static void or_(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+    int end_jump = emit_jump(compiler, OP_JUMP_IF_TRUE);
+    emit_opcode(compiler, OP_POP);
+    parser_precedence(parser, PREC_OR, compiler);
+
+    patch_jump(compiler, end_jump);
+}
+
+static struct object_function *end(struct compiler *compiler)
+{
+    emit_return(compiler);
+    struct object_function *func = compiler->function;
+#ifdef DEBUG_BYTECODE
+    if (!compiler->parser->had_error) {
+        chunk_disassemble(&compiler->function->chunk, func->name != NULL ? func->name->data : "<script>");
+    }
+#endif
+
+    return func;
 }
 
 static void scope_enter(struct compiler *compiler)
@@ -715,21 +773,29 @@ static void scope_exit(struct compiler *compiler)
     compiler->scope_level--;
 
     while (compiler->nlocals > 0 && compiler->locals[compiler->nlocals - 1].level > compiler->scope_level) {
-        emit_opcode(&compiler->parser, OP_POP);
+        if (compiler->locals[compiler->nlocals - 1].is_captured) {
+            emit_opcode(compiler, OP_CLOSE_UPVALUE);
+        } else {
+            emit_opcode(compiler, OP_POP);
+        }
         compiler->nlocals--;
     }
 }
 
-int compile(const char *source, struct chunk *chunk)
+struct object_function *compile(const char *source)
 {
+    struct parser parser = {
+        .had_error = false,
+        .panic = false,
+    };
+    parser_init(&parser, source);
+
     struct compiler compiler;
-    compiler_init(&compiler, chunk, source);
+    compiler_init(&compiler, &parser, TYPE_SCRIPT);
 
-    advance(&compiler.parser);
+    while (!parser_match(&parser, TOKEN_EOF)) { declaration(&compiler); }
 
-    while (!match(&compiler.parser, TOKEN_EOF)) { declaration(&compiler.parser); }
+    struct object_function *func = end(&compiler);
 
-    end(&compiler.parser);
-
-    return compiler.parser.had_error ? -1 : 0;
+    return parser.had_error ? NULL : func;
 }

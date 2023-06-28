@@ -32,6 +32,9 @@ static struct entry *find_entry(struct entry *entries, int capacity, struct obje
             }
         } else if (entry->key == key) {
             return entry;
+        } else if (entry->key->length == key->length && entry->key->hash == key->hash &&
+                   memcmp(entry->key->data, key->data, key->length) == 0) {
+            return entry;
         }
         index = (index + 1) % (capacity - 1);
     }

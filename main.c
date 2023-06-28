@@ -15,8 +15,6 @@ static void repl(struct vm *vm)
         }
 
         vm_interpret(vm, line);
-
-        table_dump(&vm->globals);
     }
 }
 

@@ -85,11 +85,16 @@ static const char *opnames[] = {
     [OP_SET_GLOBAL] = "OP_SET_GLOBAL",
     [OP_GET_LOCAL] = "OP_GET_LOCAL",
     [OP_SET_LOCAL] = "OP_SET_LOCAL",
+    [OP_GET_UPVALUE] = "OP_GET_UPVALUE",
+    [OP_SET_UPVALUE] = "OP_SET_UPVALUE",
     [OP_PRINT] = "OP_PRINT",
     [OP_JUMP_IF_FALSE] = "OP_JUMP_IF_FALSE",
     [OP_JUMP_IF_TRUE] = "OP_JUMP_IF_TRUE",
     [OP_LOOP] = "OP_LOOP",
     [OP_JUMP] = "OP_JUMP",
+    [OP_CALL] = "OP_CALL",
+    [OP_CLOSURE] = "OP_CLOSURE",
+    [OP_CLOSE_UPVALUE] = "OP_CLOSE_UPVALUE",
     [OP_RETURN] = "OP_RETURN",
 };
 
@@ -101,7 +106,7 @@ static const char *opcode_to_string(enum opcode op)
     return opnames[op];
 }
 
-static size_t disassemble_instruction(struct chunk *chunk, size_t offset)
+size_t disassemble_instruction(struct chunk *chunk, size_t offset)
 {
     printf("%04u ", (int)offset);
     uint8_t opcode = chunk->code[offset];
@@ -121,8 +126,27 @@ static size_t disassemble_instruction(struct chunk *chunk, size_t offset)
             return constant_instruction(opname, chunk, offset);
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:
+        case OP_GET_UPVALUE:
+        case OP_SET_UPVALUE:
+        case OP_CALL:
             return byte_instruction(opname, chunk, offset);
 
+        case OP_CLOSURE: {
+            offset++;
+            uint8_t constant = chunk->code[offset++];
+            printf("%-16s %4d ", opname, constant);
+            value_print(chunk->constants.values[constant]);
+            printf("\n");
+
+            struct object_function *function = AS_FUNCTION(chunk->constants.values[constant]);
+            for (int j = 0; j < function->nupvalues; j++) {
+                int is_local = chunk->code[offset++];
+                int index = chunk->code[offset++];
+
+                printf("%04d      |                     %s %d\n", offset - 2, is_local ? "local" : "upvalue", index);
+            }
+            return offset;
+        }
         case OP_JUMP_IF_FALSE:
         case OP_JUMP_IF_TRUE:
         case OP_JUMP:
@@ -148,6 +172,7 @@ static size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_SHR:
         case OP_PRINT:
         case OP_POP:
+        case OP_CLOSE_UPVALUE:
             return simple_instruction(opname, offset);
 
         default:
@@ -159,7 +184,7 @@ static size_t disassemble_instruction(struct chunk *chunk, size_t offset)
 int chunk_disassemble(struct chunk *chunk, const char *name)
 {
     int count = 0;
-    printf("=== %s === [%u bytes]\n", name, chunk->count);
+    printf("=== %s === [%lu bytes]\n", name, chunk->count);
     for (size_t offset = 0; offset < chunk->count;) {
         offset = disassemble_instruction(chunk, offset);
         count++;
@@ -168,22 +193,34 @@ int chunk_disassemble(struct chunk *chunk, const char *name)
     return count;
 }
 
-int chunk_write_opcode(struct chunk *chunk, enum opcode op, void *operands, size_t len, int line)
+int chunk_write_byte(struct chunk *chunk, uint8_t byte, int line)
 {
-    if (chunk->capacity < chunk->count + (1 + len)) {
+    return chunk_write_bytes(chunk, &byte, sizeof(byte), line);
+}
+
+int chunk_write_bytes(struct chunk *chunk, uint8_t *bytes, size_t count, int line)
+{
+    if (chunk->capacity < chunk->count + count) {
         size_t prev_cap = chunk->capacity;
         chunk->capacity *= CHUNK_GROWTH_FACTOR;
         chunk->code = reallocate(chunk->code, prev_cap, chunk->capacity * sizeof(chunk->code[0]));
         chunk->lines = reallocate(chunk->lines, prev_cap, chunk->capacity * sizeof(chunk->lines[0]));
     }
 
-    chunk->code[chunk->count] = (uint8_t)op;
-    chunk->lines[chunk->count] = line;
-    chunk->count++;
+    memcpy(&chunk->code[chunk->count], bytes, count);
+    while (count > 0) {
+        chunk->lines[chunk->count++] = line;
+        count--;
+    }
 
+    return 0;
+}
+
+int chunk_write_opcode(struct chunk *chunk, enum opcode op, void *operands, size_t len, int line)
+{
+    chunk_write_byte(chunk, (uint8_t)op, line);
     if (len) {
-        memcpy(&chunk->code[chunk->count], operands, len);
-        for (int i = 0; i < len; i++) { chunk->lines[chunk->count++] = line; }
+        chunk_write_bytes(chunk, operands, len, line);
     }
 
     return 0;

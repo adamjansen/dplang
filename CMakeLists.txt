@@ -10,6 +10,6 @@ project(
   LANGUAGES C
 )
 
-add_executable(dplang chunk.c compiler.c main.c memory.c scanner.c value.c vm.c object.c table.c hash.c)
+add_executable(dplang chunk.c compiler.c main.c memory.c scanner.c value.c vm.c object.c table.c hash.c parser.c)
 target_link_libraries(dplang m)
 

@@ -3,20 +3,30 @@
 
 #include <stdbool.h>
 
+#include "object.h"
 #include "chunk.h"
 #include "table.h"
 #include "value.h"
 
+#define FRAMES_MAX 64
+
 #define STACK_MAX 256
 
-struct vm {
-    struct chunk *chunk;
+struct call_frame {
+    struct object_closure *closure;
     uint8_t *ip;
+    value *slots;
+};
+
+struct vm {
+    struct call_frame frames[FRAMES_MAX];
+    int frame_count;
     value stack[STACK_MAX];
     value *sp;
-    struct object *objects;
-    struct table strings;
     struct table globals;
+    struct table strings;
+    struct object_upvalue *open_upvalues;
+    struct object *objects;
 };
 
 int vm_init(struct vm *vm);

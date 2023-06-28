@@ -3,11 +3,6 @@ CompileFlags:
   ]
   Add:
     [
-      -I/home/adam/dev/datapanel/dpflow/include,
-      -I/home/adam/dev/datapanel/dpflow/build/_deps/dpflow-build/PackageProjectInclude,
-      -I/home/adam/dev/datapanel/dpflow/build/_deps/cxxopts-src/include,
-      -I/home/adam/dev/datapanel/dpflow/build/_deps/loguru-src,
-
-      -std=c++17,
+      -std=c99,
     ]
 
