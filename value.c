@@ -1,6 +1,7 @@
 #include "value.h"
 #include "memory.h"
 #include "object.h"
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -46,9 +47,15 @@ int value_print(value val)
         case VAL_NIL:
             printf("nil");
             break;
-        case VAL_NUMBER:
-            printf("%g", AS_NUMBER(val));
+        case VAL_NUMBER: {
+            double intpart;
+            if (modf(AS_NUMBER(val), &intpart) == 0) {
+                printf("%d", (int)intpart);
+            } else {
+                printf("%g", AS_NUMBER(val));
+            }
             break;
+        }
         case VAL_OBJECT:
             object_print(AS_OBJECT(val));
             break;
