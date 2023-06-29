@@ -322,13 +322,18 @@ int vm_run(struct vm *vm)
                 break;
             case OP_ADD:
                 if (IS_STRING(stack_peek(vm, 0)) && IS_STRING(stack_peek(vm, 1))) {
-                    struct object_string *s2 = AS_STRING(stack_pop(vm));
-                    struct object_string *s1 = AS_STRING(stack_pop(vm));
+                    /* keep s1 and s2 on the stack until s3 is added
+                     * This helps avoid gc-related issues
+                     */
+                    struct object_string *s2 = AS_STRING(stack_peek(vm, 0));
+                    struct object_string *s1 = AS_STRING(stack_peek(vm, 1));
                     size_t new_length = s2->length + s1->length;
                     char *data = reallocate(NULL, 0, new_length + 1);
                     strncpy(data, s1->data, s1->length);
                     strncpy(&data[s1->length], s2->data, s2->length);
                     struct object_string *s3 = vm_intern_string(vm, data, new_length);
+                    stack_pop(vm);
+                    stack_pop(vm);
                     stack_push(vm, OBJECT_VAL(s3));
                 } else if (IS_NUMBER(stack_peek(vm, 0)) && IS_NUMBER(stack_peek(vm, 1))) {
                     double b = AS_NUMBER(stack_pop(vm));
@@ -440,11 +445,25 @@ int vm_run(struct vm *vm)
     return 0;
 }
 
+int vm_dump_bytecode(struct vm *vm, struct object_function *function)
+{
+    FILE *f = fopen("bytecode.dpc", "wb");
+    fwrite(function->chunk.code, 1, function->chunk.count, f);
+    for (int i = 0; i < function->chunk.constants.count; i++) {
+        // TODO: dump constants
+    }
+    fclose(f);
+}
+
 int vm_interpret(struct vm *vm, const char *source)
 {
     struct object_function *function = compile(source);
     if (function == NULL)
         return -1;
+
+    vm_dump_bytecode(vm, function);
+
+    gc_init(vm);
 
     stack_push(vm, OBJECT_VAL(function));
 

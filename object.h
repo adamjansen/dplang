@@ -19,6 +19,8 @@ enum object_type {
 
 struct object {
     enum object_type type;
+    bool marked;
+    struct object *next;
 };
 
 struct object_function {
@@ -80,6 +82,8 @@ static inline bool is_object_type(value val, enum object_type type)
 
 struct object_string *object_string_allocate(const char *s, size_t length);
 struct object_string *object_string_take(const char *s, size_t length);
+
+void object_free(struct object *object);
 
 int object_print(struct object *obj);
 bool object_equal(struct object *a, struct object *b);

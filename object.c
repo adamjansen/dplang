@@ -3,14 +3,33 @@
 #include "object.h"
 #include "memory.h"
 
+// #define DEBUG_LOG_GC
+
+extern struct object *gc_objects;
+
+#define ALLOCATE_OBJECT(type, id) (type *)object_allocate(sizeof(type), id)
+
+static struct object *object_allocate(size_t size, enum object_type type)
+{
+    struct object *object = (struct object *)reallocate(NULL, 0, size);
+    object->type = type;
+    object->marked = false;
+    object->next = gc_objects;
+    gc_objects = object;
+
+#ifdef DEBUG_LOG_GC
+    printf("%p allocate %zu for %d\n", (void *)object, size, type);
+#endif
+    return object;
+}
+
 struct object_string *object_string_take(const char *s, size_t length)
 {
-    struct object_string *obj = (struct object_string *)reallocate(NULL, 0, sizeof(struct object_string));
-    obj->length = length;
-    obj->data = (char *)s;
-    obj->object.type = OBJECT_STRING;
-    obj->hash = hash_string(s, length);
-    return obj;
+    struct object_string *string = ALLOCATE_OBJECT(struct object_string, OBJECT_STRING);
+    string->length = length;
+    string->data = (char *)s;
+    string->hash = hash_string(s, length);
+    return string;
 }
 
 struct object_string *object_string_allocate(const char *s, size_t length)
@@ -23,8 +42,7 @@ struct object_string *object_string_allocate(const char *s, size_t length)
 
 struct object_upvalue *object_upvalue_new(value *slot)
 {
-    struct object_upvalue *upvalue = reallocate(NULL, 0, sizeof(struct object_upvalue));
-    upvalue->object.type = OBJECT_UPVALUE;
+    struct object_upvalue *upvalue = ALLOCATE_OBJECT(struct object_upvalue, OBJECT_UPVALUE);
     upvalue->next = NULL;
     upvalue->closed = NIL_VAL;
     upvalue->location = slot;
@@ -33,8 +51,7 @@ struct object_upvalue *object_upvalue_new(value *slot)
 
 struct object_function *object_function_new()
 {
-    struct object_function *func = reallocate(NULL, 0, sizeof(struct object_function));
-    func->object.type = OBJECT_FUNCTION;
+    struct object_function *func = ALLOCATE_OBJECT(struct object_function, OBJECT_FUNCTION);
     func->arity = 0;
     func->nupvalues = 0;
     func->name = NULL;
@@ -46,9 +63,8 @@ struct object_closure *object_closure_new(struct object_function *function)
 {
     struct object_upvalue **upvalues = reallocate(NULL, 0, function->nupvalues * sizeof(struct object_upvalue *));
     for (int i = 0; i < function->nupvalues; i++) { upvalues[i] = NULL; }
-    struct object_closure *closure = reallocate(NULL, 0, sizeof(struct object_closure));
+    struct object_closure *closure = ALLOCATE_OBJECT(struct object_closure, OBJECT_CLOSURE);
 
-    closure->object.type = OBJECT_CLOSURE;
     closure->function = function;
     closure->upvalues = upvalues;
     closure->nupvalues = function->nupvalues;
@@ -57,9 +73,8 @@ struct object_closure *object_closure_new(struct object_function *function)
 
 struct object_native *object_native_new(native_function function)
 {
-    struct object_native *native = reallocate(NULL, 0, sizeof(struct object_native));
+    struct object_native *native = ALLOCATE_OBJECT(struct object_native, OBJECT_NATIVE);
     native->function = function;
-    native->object.type = OBJECT_NATIVE;
     return native;
 }
 
