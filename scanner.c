@@ -1,6 +1,9 @@
 #include "scanner.h"
 #include <stdlib.h>
+#include <math.h>
+#include <errno.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
@@ -59,12 +62,18 @@ static struct token make_token(struct scanner *scanner, enum token_type type)
     return token;
 }
 
-static struct token error_token(struct scanner *scanner, const char *message)
+static struct token error_token(struct scanner *scanner, const char *format, ...)
 {
+    va_list args;
+    va_start(args, format);
+    int len = vsnprintf(NULL, 0, format, args);
+    char *message = malloc(len);
+    vsnprintf(message, len, format, args);
+    va_end(args);
     struct token token = {
         .type = TOKEN_ERROR,
         .start = message,
-        .length = (int)strlen(message),
+        .length = len,
         .line = scanner->line,
     };
     return token;
@@ -165,12 +174,30 @@ struct token identifier(struct scanner *scanner)
 
 struct token number(struct scanner *scanner)
 {
-    while (isdigit(peek(scanner))) advance(scanner);
-
-    /* consume fractional part, if any */
-    if (peek(scanner) == '.' && isdigit(peek_next(scanner))) {
-        advance(scanner);
+    if (scanner->current[-1] == '0') {
+        if (match(scanner, 'b') || match(scanner, 'B')) {
+            // Base 2 (binary) literal
+            while (peek(scanner) == '1' || peek(scanner) == '0') advance(scanner);
+            if (isdigit(peek(scanner))) {
+                return error_token(scanner, "Invalid binary literal %.*s", scanner->current - scanner->start,
+                                   scanner->start);
+            }
+        } else if (match(scanner, 'x') || match(scanner, 'X')) {
+            // Base 16 (hex) literal
+            while (isxdigit(peek(scanner))) advance(scanner);
+        } else if (peek(scanner) != '.') {
+            return error_token(scanner, "Invalid numeric literal");
+        }
+    } else {
         while (isdigit(peek(scanner))) advance(scanner);
+    }
+
+    if (match(scanner, '.')) {
+        if (isdigit(peek(scanner))) {
+            while (isdigit(peek(scanner))) advance(scanner);
+        } else {
+            return error_token(scanner, "Invalid numeric literal");
+        }
     }
 
     return make_token(scanner, TOKEN_NUMBER);
@@ -200,7 +227,7 @@ struct token scanner_scan_token(struct scanner *scanner)
     char c = advance(scanner);
     if (isalpha(c) || c == '_')
         return identifier(scanner);
-    if (isdigit(c))
+    else if (isdigit(c))
         return number(scanner);
     switch (c) {
         case '(':

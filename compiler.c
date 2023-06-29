@@ -3,6 +3,8 @@
 #include "scanner.h"
 #include "object.h"
 #include "parser.h"
+#include <ctype.h>
+#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -688,7 +690,21 @@ static void unary(struct parser *parser, enum precedence precedence, void *userd
 static void number(struct parser *parser, enum precedence precedence, void *userdata)
 {
     struct compiler *compiler = (struct compiler *)userdata;
-    double val = strtod(parser->previous.start, NULL);
+    double val;
+    if (parser->previous.start[0] == '0' && tolower(parser->previous.start[1]) == 'b') {
+        if (parser->previous.length > 32) {
+            parser_error_at(parser, &parser->previous, "Invalid binary literal");
+        }
+        uint32_t u32 = 0;
+        for (uint32_t i = 0; i < parser->previous.length; i++) {
+            u32 <<= 1;
+            u32 |= (parser->previous.start[i] & 1);
+        }
+        val = (double)u32;
+
+    } else {
+        val = strtod(parser->previous.start, NULL);
+    }
     uint8_t constant = make_constant(compiler, NUMBER_VAL(val));
 
     emit_opcode_args(compiler, OP_CONSTANT, &constant, sizeof(constant));
