@@ -5,6 +5,7 @@
 #include "value.h"
 #include "table.h"
 #include "memory.h"
+#include "builtins.h"
 #include <math.h>
 #include <stdarg.h>
 #include <string.h>
@@ -165,12 +166,6 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
     table_set(&vm->strings, obj, NIL_VAL);
     return obj;
 }
-
-static value native_clock(int arg_count, value *args)
-{
-    return NUMBER_VAL((double)clock() / CLOCKS_PER_SEC);
-}
-
 int vm_init(struct vm *vm)
 {
     stack_reset(vm);
@@ -178,7 +173,10 @@ int vm_init(struct vm *vm)
     table_init(&vm->strings);
     table_init(&vm->globals);
 
-    define_native(vm, "clock", native_clock);
+    for (struct builtin_function_info *builtin = builtins; builtin->function != NULL; builtin++) {
+        define_native(vm, builtin->name, builtin->function);
+    }
+
     return 0;
 }
 
