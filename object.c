@@ -9,6 +9,7 @@ extern struct object *gc_objects;
 
 #define ALLOCATE_OBJECT(type, id) (type *)object_allocate(sizeof(type), id)
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 static struct object *object_allocate(size_t size, enum object_type type)
 {
     struct object *object = (struct object *)reallocate(NULL, 0, size);
@@ -22,6 +23,7 @@ static struct object *object_allocate(size_t size, enum object_type type)
 #endif
     return object;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 struct object_string *object_string_take(const char *s, size_t length)
 {
@@ -117,7 +119,7 @@ int object_print(struct object *obj)
         }
         case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)obj;
-            object_print((struct object *)klass->name);
+            printf("%s", klass->name->data);
             break;
         }
         case OBJECT_INSTANCE: {
@@ -157,8 +159,9 @@ int object_print(struct object *obj)
 
 bool object_equal(struct object *a, struct object *b)
 {
-    if (a->type != b->type)
+    if (a->type != b->type) {
         return false;
+    }
 
     switch (a->type) {
         case OBJECT_STRING: {

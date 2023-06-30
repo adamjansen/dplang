@@ -1,6 +1,8 @@
 #ifndef DPLANG_SCANNER_H
 #define DPLANG_SCANNER_H
 
+#include <stddef.h>
+
 struct scanner {
     const char *start;
     const char *current;
@@ -59,7 +61,7 @@ enum token_type {
 struct token {
     enum token_type type;
     const char *start;
-    int length;
+    size_t length;
     int line;
 };
 

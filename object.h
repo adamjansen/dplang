@@ -67,7 +67,7 @@ struct object_native {
 
 struct object_string {
     struct object object;
-    int length;
+    size_t length;
     char *data;
     hash_t hash;
 };

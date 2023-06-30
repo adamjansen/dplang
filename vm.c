@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#define DEBUG_TRACE_EXEC
+// #define DEBUG_TRACE_EXEC
 
 static inline double fshl(double a, double b)
 {
@@ -230,8 +230,9 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
 {
     uint32_t hash = hash_string(s, len);
     struct object_string *interned = table_find_string(&vm->strings, s, len, hash);
-    if (interned != NULL)
+    if (interned != NULL) {
         return interned;
+    }
     struct object_string *obj = object_string_take(s, len);
     table_set(&vm->strings, obj, NIL_VAL);
     return obj;
@@ -268,21 +269,17 @@ int vm_free(struct vm *vm)
     return 0;
 }
 
-int vm_run(struct vm *vm)
-{
-    struct call_frame *frame = &vm->frames[vm->frame_count - 1];
-
-#define READ_U8()       ((uint8_t)*frame->ip++)
-#define READ_U16()      (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
-#define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_U8()])
-#define READ_OPCODE()   ((enum opcode)READ_U8())
-#define READ_STRING()   AS_STRING(READ_CONSTANT())
+#define READ_U8(vm)       ((uint8_t) * (vm)->frame->ip++)
+#define READ_CONSTANT(vm) ((vm)->frame->closure->function->chunk.constants.values[READ_U8(vm)])
+#define READ_U16(vm)      ((vm)->frame->ip += 2, (uint16_t)(((vm)->frame->ip[-2] << 8) | (vm)->frame->ip[-1]))
+#define READ_OPCODE(vm)   ((enum opcode)READ_U8(vm))
+#define READ_STRING(vm)   AS_STRING(READ_CONSTANT(vm))
 
 #define BINARY_OP(valtype, op)                                                \
     do {                                                                      \
         if (!IS_NUMBER(stack_peek(vm, 0)) || !IS_NUMBER(stack_peek(vm, 1))) { \
             vm_runtime_error(vm, "Operands must be numbers");                 \
-            return -1;                                                        \
+            return false;                                                     \
         }                                                                     \
         double b = AS_NUMBER(stack_pop(vm));                                  \
         double a = AS_NUMBER(stack_pop(vm));                                  \
@@ -293,13 +290,431 @@ int vm_run(struct vm *vm)
     do {                                                                      \
         if (!IS_NUMBER(stack_peek(vm, 0)) || !IS_NUMBER(stack_peek(vm, 1))) { \
             vm_runtime_error(vm, "Operands must be numbers");                 \
-            return -1;                                                        \
+            return false;                                                     \
         }                                                                     \
         double b = AS_NUMBER(stack_pop(vm));                                  \
         double a = AS_NUMBER(stack_pop(vm));                                  \
         stack_push(vm, valtype(func(a, b)));                                  \
     } while (0)
 
+bool vm_op_constant(struct vm *vm)
+{
+    value constant = READ_CONSTANT(vm);
+    stack_push(vm, constant);
+    return true;
+}
+
+bool vm_op_nil(struct vm *vm)
+{
+    stack_push(vm, NIL_VAL);
+    return true;
+}
+bool vm_op_true(struct vm *vm)
+{
+    stack_push(vm, BOOL_VAL(true));
+    return true;
+}
+
+bool vm_op_false(struct vm *vm)
+{
+    stack_push(vm, BOOL_VAL(false));
+    return true;
+}
+
+bool vm_op_pop(struct vm *vm)
+{
+    stack_pop(vm);
+    return true;
+}
+
+bool vm_op_get_local(struct vm *vm)
+{
+    uint8_t slot = READ_U8(vm);
+    stack_push(vm, vm->frame->slots[slot]);
+    return true;
+}
+
+bool vm_op_set_local(struct vm *vm)
+{
+    uint8_t slot = READ_U8(vm);
+    vm->frame->slots[slot] = stack_peek(vm, 0);
+    return true;
+}
+
+bool vm_op_get_global(struct vm *vm)
+{
+    struct object_string *name = READ_STRING(vm);
+    value value;
+    if (!table_get(&vm->globals, name, &value)) {
+        vm_runtime_error(vm, "Undefined variable '%s'", name->data);
+        return false;
+    }
+    stack_push(vm, value);
+    return true;
+}
+
+bool vm_op_define_global(struct vm *vm)
+{
+    struct object_string *name = READ_STRING(vm);
+    table_set(&vm->globals, name, stack_peek(vm, 0));
+    stack_pop(vm);
+    return true;
+}
+
+bool vm_op_set_global(struct vm *vm)
+{
+    struct object_string *name = READ_STRING(vm);
+    if (table_set(&vm->globals, name, stack_peek(vm, 0))) {
+        table_delete(&vm->globals, name);
+        vm_runtime_error(vm, "Undefined variable '%s'", name->data);
+        return false;
+    }
+    return true;
+}
+
+bool vm_op_get_upvalue(struct vm *vm)
+{
+    uint8_t slot = READ_U8(vm);
+    stack_push(vm, *vm->frame->closure->upvalues[slot]->location);
+    return true;
+}
+
+bool vm_op_set_upvalue(struct vm *vm)
+{
+    uint8_t slot = READ_U8(vm);
+    *vm->frame->closure->upvalues[slot]->location = stack_peek(vm, 0);
+    return true;
+}
+
+bool vm_op_get_super(struct vm *vm)
+{
+    struct object_string *name = READ_STRING(vm);
+    struct object_class *superclass = AS_CLASS(stack_pop(vm));
+
+    if (!bind_method(vm, superclass, name)) {
+        return false;
+    }
+    return true;
+}
+
+bool vm_op_get_property(struct vm *vm)
+{
+    if (!IS_INSTANCE(stack_peek(vm, 0))) {
+        vm_runtime_error(vm, "Only instances have properties");
+        return false;
+    }
+    struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 0));
+    struct object_string *name = READ_STRING(vm);
+    value value;
+    if (table_get(&instance->fields, name, &value)) {
+        stack_pop(vm);  // instance
+        stack_push(vm, value);
+        return true;
+    }
+    if (!bind_method(vm, instance->klass, name)) {
+        return false;
+    }
+    return false;
+}
+
+bool vm_op_set_property(struct vm *vm)
+{
+    if (!IS_INSTANCE(stack_peek(vm, 1))) {
+        vm_runtime_error(vm, "Only instances have fields");
+        return false;
+    }
+    struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 1));
+    table_set(&instance->fields, READ_STRING(vm), stack_peek(vm, 0));
+    value value = stack_pop(vm);
+    stack_pop(vm);
+    stack_push(vm, value);
+    return true;
+}
+
+bool vm_op_equal(struct vm *vm)
+{
+    value b = stack_pop(vm);
+    value a = stack_pop(vm);
+    stack_push(vm, BOOL_VAL(value_equal(a, b)));
+    return true;
+}
+
+bool vm_op_greater(struct vm *vm)
+{
+    BINARY_OP(BOOL_VAL, >);
+    return true;
+}
+
+bool vm_op_less(struct vm *vm)
+{
+    BINARY_OP(BOOL_VAL, <);
+    return true;
+}
+
+bool vm_op_add(struct vm *vm)
+{
+    if (IS_STRING(stack_peek(vm, 0)) && IS_STRING(stack_peek(vm, 1))) {
+        /* keep s1 and s2 on the stack until s3 is added
+         * This helps avoid gc-related issues
+         */
+        struct object_string *s2 = AS_STRING(stack_peek(vm, 0));
+        struct object_string *s1 = AS_STRING(stack_peek(vm, 1));
+        size_t new_length = s2->length + s1->length;
+        char *data = reallocate(NULL, 0, new_length + 1);
+        strncpy(data, s1->data, s1->length);
+        strncpy(&data[s1->length], s2->data, s2->length);
+        struct object_string *s3 = vm_intern_string(vm, data, new_length);
+        stack_pop(vm);
+        stack_pop(vm);
+        stack_push(vm, OBJECT_VAL(s3));
+    } else if (IS_NUMBER(stack_peek(vm, 0)) && IS_NUMBER(stack_peek(vm, 1))) {
+        double b = AS_NUMBER(stack_pop(vm));
+        double a = AS_NUMBER(stack_pop(vm));
+        stack_push(vm, NUMBER_VAL(a + b));
+    } else {
+        vm_runtime_error(vm, "Operands must be two numbers or two strings");
+        return false;
+    }
+    return true;
+}
+
+bool vm_op_subtract(struct vm *vm)
+{
+    BINARY_OP(NUMBER_VAL, -);
+    return true;
+}
+
+bool vm_op_multiply(struct vm *vm)
+{
+    BINARY_OP(NUMBER_VAL, *);
+    return true;
+}
+
+bool vm_op_divide(struct vm *vm)
+{
+    BINARY_OP(NUMBER_VAL, /);
+    return true;
+}
+
+bool vm_op_mod(struct vm *vm)
+{
+    BINARY_FUNC(NUMBER_VAL, fmod);
+    return true;
+}
+
+bool vm_op_shl(struct vm *vm)
+{
+    BINARY_FUNC(NUMBER_VAL, fshl);
+    return true;
+}
+
+bool vm_op_shr(struct vm *vm)
+{
+    BINARY_FUNC(NUMBER_VAL, fshr);
+    return true;
+}
+
+bool vm_op_not(struct vm *vm)
+{
+    stack_push(vm, BOOL_VAL(is_falsey(stack_pop(vm))));
+    return true;
+}
+
+bool vm_op_print(struct vm *vm)
+{
+    value_print(stack_pop(vm));
+    printf("\n");
+    return true;
+}
+
+bool vm_op_jump(struct vm *vm)
+{
+    uint16_t offset = READ_U16(vm);
+    vm->frame->ip += offset;
+    return true;
+}
+
+bool vm_op_jump_if_false(struct vm *vm)
+{
+    uint16_t offset = READ_U16(vm);
+    if (is_falsey(stack_peek(vm, 0))) {
+        vm->frame->ip += offset;
+    }
+    return true;
+}
+
+bool vm_op_jump_if_true(struct vm *vm)
+{
+    uint16_t offset = READ_U16(vm);
+    if (!is_falsey(stack_peek(vm, 0))) {
+        vm->frame->ip += offset;
+    }
+    return true;
+}
+
+bool vm_op_loop(struct vm *vm)
+{
+    uint16_t offset = READ_U16(vm);
+    vm->frame->ip -= offset;
+    return true;
+}
+
+bool vm_op_call(struct vm *vm)
+{
+    int arg_count = READ_U8(vm);
+    if (!call_value(vm, stack_peek(vm, arg_count), arg_count)) {
+        return false;
+    }
+    vm->frame = &vm->frames[vm->frame_count - 1];
+    return true;
+}
+
+bool vm_op_invoke(struct vm *vm)
+{
+    struct object_string *method = READ_STRING(vm);
+    int arg_count = READ_U8(vm);
+    if (!invoke(vm, method, arg_count)) {
+        return false;
+    }
+    vm->frame = &vm->frames[vm->frame_count - 1];
+    return true;
+}
+
+bool vm_op_super_invoke(struct vm *vm)
+{
+    struct object_string *method = READ_STRING(vm);
+    int arg_count = READ_U8(vm);
+    struct object_class *superclass = AS_CLASS(stack_pop(vm));
+    if (!invoke_from_class(vm, superclass, method, arg_count)) {
+        return false;
+    }
+    vm->frame = &vm->frames[vm->frame_count - 1];
+    return true;
+}
+
+bool vm_op_closure(struct vm *vm)
+{
+    struct object_function *function = AS_FUNCTION(READ_CONSTANT(vm));
+    struct object_closure *closure = object_closure_new(function);
+    stack_push(vm, OBJECT_VAL(closure));
+    for (int i = 0; i < closure->nupvalues; i++) {
+        uint8_t is_local = READ_U8(vm);
+        uint8_t index = READ_U8(vm);
+
+        if (is_local) {
+            closure->upvalues[i] = capture_upvalue(vm, vm->frame->slots + index);
+        } else {
+            closure->upvalues[i] = vm->frame->closure->upvalues[index];
+        }
+    }
+    return true;
+}
+
+bool vm_op_close_upvalue(struct vm *vm)
+{
+    close_upvalues(vm, vm->sp - 1);
+    stack_pop(vm);
+    return true;
+}
+
+bool vm_op_return(struct vm *vm)
+{
+    value result = stack_pop(vm);
+    close_upvalues(vm, vm->frame->slots);
+    vm->frame_count--;
+    if (vm->frame_count == 0) {
+        stack_pop(vm);
+        return false;
+    }
+    vm->sp = vm->frame->slots;
+    stack_push(vm, result);
+    vm->frame = &vm->frames[vm->frame_count - 1];
+    return true;
+}
+
+bool vm_op_negate(struct vm *vm)
+{
+    if (!IS_NUMBER(stack_peek(vm, 0))) {
+        vm_runtime_error(vm, "Operand must be a number");
+        return false;
+    }
+    stack_push(vm, NUMBER_VAL(-AS_NUMBER(stack_pop(vm))));
+    return true;
+}
+
+bool vm_op_class(struct vm *vm)
+{
+    stack_push(vm, OBJECT_VAL(object_class_new(READ_STRING(vm))));
+    return true;
+}
+
+bool vm_op_method(struct vm *vm)
+{
+    define_method(vm, READ_STRING(vm));
+    return true;
+}
+
+bool vm_op_inherit(struct vm *vm)
+{
+    value superclass = stack_peek(vm, 1);
+    if (!IS_CLASS(superclass)) {
+        vm_runtime_error(vm, "Superclass must be a class");
+        return false;
+    }
+    struct object_class *subclass = AS_CLASS(stack_peek(vm, 0));
+    table_add_all(&AS_CLASS(superclass)->methods, &subclass->methods);
+    stack_pop(vm);  // subclass
+    return true;
+}
+
+typedef bool (*opcode_impl)(struct vm *vm);
+static opcode_impl opcode_handlers[UINT8_MAX + 1] = {
+    [OP_CONSTANT] = vm_op_constant,
+    [OP_NIL] = vm_op_nil,
+    [OP_FALSE] = vm_op_false,
+    [OP_POP] = vm_op_pop,
+    [OP_TRUE] = vm_op_true,
+    [OP_GET_PROPERTY] = vm_op_get_property,
+    [OP_SET_PROPERTY] = vm_op_set_property,
+    [OP_GET_SUPER] = vm_op_get_super,
+    [OP_EQUAL] = vm_op_equal,
+    [OP_GREATER] = vm_op_greater,
+    [OP_LESS] = vm_op_less,
+    [OP_ADD] = vm_op_add,
+    [OP_SUBTRACT] = vm_op_subtract,
+    [OP_MULTIPLY] = vm_op_multiply,
+    [OP_DIVIDE] = vm_op_divide,
+    [OP_MOD] = vm_op_mod,
+    [OP_SHL] = vm_op_shl,
+    [OP_SHR] = vm_op_shr,
+    [OP_NEGATE] = vm_op_negate,
+    [OP_NOT] = vm_op_not,
+    [OP_DEFINE_GLOBAL] = vm_op_define_global,
+    [OP_GET_GLOBAL] = vm_op_get_global,
+    [OP_SET_GLOBAL] = vm_op_set_global,
+    [OP_GET_LOCAL] = vm_op_get_local,
+    [OP_SET_LOCAL] = vm_op_set_local,
+    [OP_GET_UPVALUE] = vm_op_get_upvalue,
+    [OP_SET_UPVALUE] = vm_op_set_upvalue,
+    [OP_JUMP_IF_FALSE] = vm_op_jump_if_false,
+    [OP_JUMP_IF_TRUE] = vm_op_jump_if_true,
+    [OP_JUMP] = vm_op_jump,
+    [OP_LOOP] = vm_op_loop,
+    [OP_PRINT] = vm_op_print,
+    [OP_CALL] = vm_op_call,
+    [OP_CLOSE_UPVALUE] = vm_op_close_upvalue,
+    [OP_CLOSURE] = vm_op_closure,
+    [OP_RETURN] = vm_op_return,
+    [OP_CLASS] = vm_op_class,
+    [OP_METHOD] = vm_op_method,
+    [OP_INVOKE] = vm_op_invoke,
+    [OP_SUPER_INVOKE] = vm_op_super_invoke,
+    [OP_INHERIT] = vm_op_inherit,
+};
+
+int vm_run(struct vm *vm)
+{
+    vm->frame = &vm->frames[vm->frame_count - 1];
 #ifdef DEBUG_TRACE_EXEC
     printf("++++ TRACE ++++\n");
 #endif
@@ -313,258 +728,22 @@ int vm_run(struct vm *vm)
             printf(" ]");
         }
         printf("\n");
-        disassemble_instruction(&frame->closure->function->chunk,
-                                (int)(frame->ip - frame->closure->function->chunk.code));
+        disassemble_instruction(&vm->frame->closure->function->chunk,
+                                (int)(vm->frame->ip - vm->frame->closure->function->chunk.code));
 
 #endif
-        enum opcode inst = READ_OPCODE();
-        switch (inst) {
-            case OP_CONSTANT: {
-                value constant = READ_CONSTANT();
-                stack_push(vm, constant);
-                break;
-            }
-            case OP_NIL:
-                stack_push(vm, NIL_VAL);
-                break;
-            case OP_TRUE:
-                stack_push(vm, BOOL_VAL(true));
-                break;
-            case OP_FALSE:
-                stack_push(vm, BOOL_VAL(false));
-                break;
-            case OP_POP:
-                stack_pop(vm);
-                break;
-            case OP_GET_LOCAL: {
-                uint8_t slot = READ_U8();
-                stack_push(vm, frame->slots[slot]);
-                break;
-            }
-            case OP_SET_LOCAL: {
-                uint8_t slot = READ_U8();
-                frame->slots[slot] = stack_peek(vm, 0);
-                break;
-            }
-            case OP_GET_GLOBAL: {
-                struct object_string *name = READ_STRING();
-                value value;
-                if (!table_get(&vm->globals, name, &value)) {
-                    vm_runtime_error(vm, "Undefined variable '%s'", name->data);
-                    return -1;
-                }
-                stack_push(vm, value);
-                break;
-            }
-            case OP_DEFINE_GLOBAL: {
-                struct object_string *name = READ_STRING();
-                table_set(&vm->globals, name, stack_peek(vm, 0));
-                stack_pop(vm);
-                break;
-            }
-            case OP_SET_GLOBAL: {
-                struct object_string *name = READ_STRING();
-                if (table_set(&vm->globals, name, stack_peek(vm, 0))) {
-                    table_delete(&vm->globals, name);
-                    vm_runtime_error(vm, "Undefined variable '%s'", name->data);
-                    return -1;
-                }
-                break;
-            }
-            case OP_GET_UPVALUE: {
-                uint8_t slot = READ_U8();
-                stack_push(vm, *frame->closure->upvalues[slot]->location);
-                break;
-            }
-            case OP_SET_UPVALUE: {
-                uint8_t slot = READ_U8();
-                *frame->closure->upvalues[slot]->location = stack_peek(vm, 0);
-                break;
-            }
-            case OP_GET_PROPERTY: {
-                if (!IS_INSTANCE(stack_peek(vm, 0))) {
-                    vm_runtime_error(vm, "Only instances have properties");
-                    return -1;
-                }
-                struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 0));
-                struct object_string *name = READ_STRING();
-                value value;
-                if (table_get(&instance->fields, name, &value)) {
-                    stack_pop(vm);  // instance
-                    stack_push(vm, value);
-                    break;
-                }
-                if (!bind_method(vm, instance->klass, name)) {
-                    return -1;
-                }
-                return -1;
-            }
-            case OP_SET_PROPERTY: {
-                if (!IS_INSTANCE(stack_peek(vm, 1))) {
-                    vm_runtime_error(vm, "Only instances have fields");
-                    return -1;
-                }
-                struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 1));
-                table_set(&instance->fields, READ_STRING(), stack_peek(vm, 0));
-                value value = stack_pop(vm);
-                stack_pop(vm);
-                stack_push(vm, value);
-                break;
-            }
-            case OP_EQUAL: {
-                value b = stack_pop(vm);
-                value a = stack_pop(vm);
-                stack_push(vm, BOOL_VAL(value_equal(a, b)));
-                break;
-            }
-            case OP_GREATER:
-                BINARY_OP(BOOL_VAL, >);
-                break;
-            case OP_LESS:
-                BINARY_OP(BOOL_VAL, <);
-                break;
-            case OP_ADD:
-                if (IS_STRING(stack_peek(vm, 0)) && IS_STRING(stack_peek(vm, 1))) {
-                    /* keep s1 and s2 on the stack until s3 is added
-                     * This helps avoid gc-related issues
-                     */
-                    struct object_string *s2 = AS_STRING(stack_peek(vm, 0));
-                    struct object_string *s1 = AS_STRING(stack_peek(vm, 1));
-                    size_t new_length = s2->length + s1->length;
-                    char *data = reallocate(NULL, 0, new_length + 1);
-                    strncpy(data, s1->data, s1->length);
-                    strncpy(&data[s1->length], s2->data, s2->length);
-                    struct object_string *s3 = vm_intern_string(vm, data, new_length);
-                    stack_pop(vm);
-                    stack_pop(vm);
-                    stack_push(vm, OBJECT_VAL(s3));
-                } else if (IS_NUMBER(stack_peek(vm, 0)) && IS_NUMBER(stack_peek(vm, 1))) {
-                    double b = AS_NUMBER(stack_pop(vm));
-                    double a = AS_NUMBER(stack_pop(vm));
-                    stack_push(vm, NUMBER_VAL(a + b));
-                } else {
-                    vm_runtime_error(vm, "Operands must be two numbers or two strings");
-                    return -1;
-                }
-                break;
-            case OP_SUBTRACT:
-                BINARY_OP(NUMBER_VAL, -);
-                break;
-            case OP_MULTIPLY:
-                BINARY_OP(NUMBER_VAL, *);
-                break;
-            case OP_DIVIDE:
-                BINARY_OP(NUMBER_VAL, /);
-                break;
-            case OP_MOD:
-                BINARY_FUNC(NUMBER_VAL, fmod);
-                break;
-            case OP_SHL:
-                BINARY_FUNC(NUMBER_VAL, fshl);
-                break;
-            case OP_SHR:
-                BINARY_FUNC(NUMBER_VAL, fshr);
-                break;
-            case OP_NOT:
-                stack_push(vm, BOOL_VAL(is_falsey(stack_pop(vm))));
-                break;
-            case OP_PRINT:
-                value_print(stack_pop(vm));
-                printf("\n");
-                break;
-            case OP_JUMP: {
-                uint16_t offset = READ_U16();
-                frame->ip += offset;
-                break;
-            }
-            case OP_JUMP_IF_FALSE: {
-                uint16_t offset = READ_U16();
-                if (is_falsey(stack_peek(vm, 0)))
-                    frame->ip += offset;
-                break;
-            }
-            case OP_JUMP_IF_TRUE: {
-                uint16_t offset = READ_U16();
-                if (!is_falsey(stack_peek(vm, 0)))
-                    frame->ip += offset;
-                break;
-            }
-            case OP_LOOP: {
-                uint16_t offset = READ_U16();
-                frame->ip -= offset;
-                break;
-            }
-            case OP_CALL: {
-                int arg_count = READ_U8();
-                if (!call_value(vm, stack_peek(vm, arg_count), arg_count)) {
-                    return -1;
-                }
-                frame = &vm->frames[vm->frame_count - 1];
-                break;
-            }
-            case OP_INVOKE: {
-                struct object_string *method = READ_STRING();
-                int arg_count = READ_U8();
-                if (!invoke(vm, method, arg_count)) {
-                    return -1;
-                }
-                frame = &vm->frames[vm->frame_count - 1];
-                break;
-            }
-            case OP_CLOSURE: {
-                struct object_function *function = AS_FUNCTION(READ_CONSTANT());
-                struct object_closure *closure = object_closure_new(function);
-                stack_push(vm, OBJECT_VAL(closure));
-                for (int i = 0; i < closure->nupvalues; i++) {
-                    uint8_t is_local = READ_U8();
-                    uint8_t index = READ_U8();
-
-                    if (is_local) {
-                        closure->upvalues[i] = capture_upvalue(vm, frame->slots + index);
-                    } else {
-                        closure->upvalues[i] = frame->closure->upvalues[index];
-                    }
-                }
-                break;
-            }
-            case OP_CLOSE_UPVALUE:
-                close_upvalues(vm, vm->sp - 1);
-                stack_pop(vm);
-                break;
-            case OP_RETURN: {
-                value result = stack_pop(vm);
-                close_upvalues(vm, frame->slots);
-                vm->frame_count--;
-                if (vm->frame_count == 0) {
-                    stack_pop(vm);
-                    return 0;
-                }
-                vm->sp = frame->slots;
-                stack_push(vm, result);
-                frame = &vm->frames[vm->frame_count - 1];
-                break;
-            }
-            case OP_NEGATE:
-                if (!IS_NUMBER(stack_peek(vm, 0))) {
-                    vm_runtime_error(vm, "Operand must be a number");
-                    return -1;
-                }
-                stack_push(vm, NUMBER_VAL(-AS_NUMBER(stack_pop(vm))));
-                break;
-            case OP_CLASS:
-                stack_push(vm, OBJECT_VAL(object_class_new(READ_STRING())));
-                break;
-            case OP_METHOD:
-                define_method(vm, READ_STRING());
-                break;
+        enum opcode inst = READ_OPCODE(vm);
+        opcode_impl handler = opcode_handlers[inst];
+        if (!handler(vm)) {
+            return -1;
         }
     }
-
     return 0;
 }
 
 int vm_dump_bytecode(struct vm *vm, struct object_function *function)
 {
+    (void)vm;
     FILE *f = fopen("bytecode.dpc", "wb");
     fwrite(function->chunk.code, 1, function->chunk.count, f);
     for (int i = 0; i < function->chunk.constants.count; i++) {
@@ -576,8 +755,9 @@ int vm_dump_bytecode(struct vm *vm, struct object_function *function)
 int vm_interpret(struct vm *vm, const char *source)
 {
     struct object_function *function = compile(source);
-    if (function == NULL)
+    if (function == NULL) {
         return -1;
+    }
 
     vm_dump_bytecode(vm, function);
 

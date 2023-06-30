@@ -35,17 +35,20 @@ static char peek(struct scanner *scanner)
 
 static char peek_next(struct scanner *scanner)
 {
-    if (is_at_end(scanner))
+    if (is_at_end(scanner)) {
         return '\0';
+    }
     return scanner->current[1];
 }
 
 static bool match(struct scanner *scanner, char expected)
 {
-    if (is_at_end(scanner))
+    if (is_at_end(scanner)) {
         return false;
-    if (*scanner->current != expected)
+    }
+    if (*scanner->current != expected) {
         return false;
+    }
     scanner->current++;
     return true;
 }
@@ -95,7 +98,7 @@ static void skip_whitespace(struct scanner *scanner)
                 break;
             case '/':
                 if (peek_next(scanner) == '/') {
-                    while (peek(scanner) != '\n' && !is_at_end(scanner)) advance(scanner);
+                    while (peek(scanner) != '\n' && !is_at_end(scanner)) { advance(scanner); }
                 } else {
                     return;
                 }
@@ -145,7 +148,7 @@ static enum token_type identifier_type(struct scanner *scanner)
         case 'p':
             return check_keyword(scanner, 1, 4, "rint", TOKEN_PRINT);
         case 'r':
-            return check_keyword(scanner, 1, 5, "eturn", TOKEN_RETURN);
+            return check_keyword(scanner, 1, 5, "eturn", TOKEN_RETURN);  // NOLINT(readability-magic-numbers)
         case 's':
             return check_keyword(scanner, 1, 4, "uper", TOKEN_SUPER);
         case 't':
@@ -168,33 +171,43 @@ static enum token_type identifier_type(struct scanner *scanner)
 
 struct token identifier(struct scanner *scanner)
 {
-    while (isalnum(peek(scanner)) || peek(scanner) == '_') advance(scanner);
+    while (isalnum(peek(scanner)) || peek(scanner) == '_') { advance(scanner); }
     return make_token(scanner, identifier_type(scanner));
+}
+
+struct token binary_number(struct scanner *scanner)
+{
+    while (peek(scanner) == '1' || peek(scanner) == '0') { advance(scanner); }
+    if (isdigit(peek(scanner))) {
+        return error_token(scanner, "Invalid binary literal %.*s", scanner->current - scanner->start, scanner->start);
+    }
+    return make_token(scanner, TOKEN_NUMBER);
+}
+
+struct token hexadecimal_number(struct scanner *scanner)
+{
+    // Base 16 (hex) literal
+    while (isxdigit(peek(scanner))) { advance(scanner); }
+    return make_token(scanner, TOKEN_NUMBER);
 }
 
 struct token number(struct scanner *scanner)
 {
     if (scanner->current[-1] == '0') {
         if (match(scanner, 'b') || match(scanner, 'B')) {
-            // Base 2 (binary) literal
-            while (peek(scanner) == '1' || peek(scanner) == '0') advance(scanner);
-            if (isdigit(peek(scanner))) {
-                return error_token(scanner, "Invalid binary literal %.*s", scanner->current - scanner->start,
-                                   scanner->start);
-            }
+            return binary_number(scanner);
         } else if (match(scanner, 'x') || match(scanner, 'X')) {
-            // Base 16 (hex) literal
-            while (isxdigit(peek(scanner))) advance(scanner);
+            return hexadecimal_number(scanner);
         } else if (peek(scanner) != '.') {
             return error_token(scanner, "Invalid numeric literal");
         }
-    } else {
-        while (isdigit(peek(scanner))) advance(scanner);
     }
+
+    while (isdigit(peek(scanner))) { advance(scanner); }
 
     if (match(scanner, '.')) {
         if (isdigit(peek(scanner))) {
-            while (isdigit(peek(scanner))) advance(scanner);
+            while (isdigit(peek(scanner))) { advance(scanner); }
         } else {
             return error_token(scanner, "Invalid numeric literal");
         }
@@ -206,12 +219,14 @@ struct token number(struct scanner *scanner)
 struct token string(struct scanner *scanner)
 {
     while (peek(scanner) != '"' && !is_at_end(scanner)) {
-        if (peek(scanner) == '\n')
+        if (peek(scanner) == '\n') {
             scanner->line++;
+        }
         advance(scanner);
     }
-    if (is_at_end(scanner))
+    if (is_at_end(scanner)) {
         return error_token(scanner, "Unterminated string literal");
+    }
 
     advance(scanner);
     return make_token(scanner, TOKEN_STRING);
@@ -221,14 +236,16 @@ struct token scanner_scan_token(struct scanner *scanner)
 {
     skip_whitespace(scanner);
     scanner->start = scanner->current;
-    if (is_at_end(scanner))
+    if (is_at_end(scanner)) {
         return make_token(scanner, TOKEN_EOF);
+    }
 
     char c = advance(scanner);
-    if (isalpha(c) || c == '_')
+    if (isalpha(c) || c == '_') {
         return identifier(scanner);
-    else if (isdigit(c))
+    } else if (isdigit(c)) {
         return number(scanner);
+    }
     switch (c) {
         case '(':
             return make_token(scanner, TOKEN_LEFT_PAREN);

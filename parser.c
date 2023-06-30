@@ -7,8 +7,9 @@ extern struct parse_rule *parser_get_rule(enum token_type type);
 
 void parser_error_at(struct parser *parser, struct token *token, const char *message)
 {
-    if (parser->panic)
+    if (parser->panic) {
         return;
+    }
     parser->panic = true;
     fprintf(stderr, "[line %u] error", token->line);
 
@@ -39,8 +40,9 @@ static void parser_advance(struct parser *parser)
 
     while (1) {
         parser->current = scanner_scan_token(&parser->scanner);
-        if (parser->current.type != TOKEN_ERROR)
+        if (parser->current.type != TOKEN_ERROR) {
             break;
+        }
 
         parser_error_at_current(parser, parser->current.start);
     }
@@ -58,8 +60,9 @@ void parser_synchronize(struct parser *parser)
     parser->panic = false;
 
     while (parser->current.type != TOKEN_EOF) {
-        if (parser->previous.type == TOKEN_SEMICOLON)
+        if (parser->previous.type == TOKEN_SEMICOLON) {
             return;
+        }
         switch (parser->current.type) {
             case TOKEN_CLASS:
             case TOKEN_FUNC:
@@ -116,8 +119,9 @@ bool parser_check(struct parser *parser, enum token_type type)
 
 bool parser_match(struct parser *parser, enum token_type type)
 {
-    if (!parser_check(parser, type))
+    if (!parser_check(parser, type)) {
         return false;
+    }
     parser_advance(parser);
     return true;
 }

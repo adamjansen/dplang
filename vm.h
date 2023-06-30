@@ -20,6 +20,7 @@ struct call_frame {
 
 struct vm {
     struct call_frame frames[FRAMES_MAX];
+    struct call_frame *frame;
     int frame_count;
     value stack[STACK_MAX];
     value *sp;

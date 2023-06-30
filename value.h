@@ -42,7 +42,7 @@ struct value_array {
 };
 
 int value_array_init(struct value_array *varray);
-int value_array_write(struct value_array *varray, value v);
+int value_array_write(struct value_array *varray, value val);
 int value_array_free(struct value_array *varray);
 
 int value_print(value val);

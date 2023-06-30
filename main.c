@@ -1,12 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sysexits.h>
 
 #include "vm.h"
 
+#define LINE_BUFFER_SIZE 1024
+
 static void repl(struct vm *vm)
 {
-    char line[1024];
+    char line[LINE_BUFFER_SIZE];
     while (1) {
         printf("> ");
         if (!fgets(line, sizeof(line), stdin)) {
@@ -23,7 +26,7 @@ static char *readfile(const char *path)
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
         fprintf(stderr, "Could not open file %s\n", path);
-        exit(74);
+        exit(EX_IOERR);
     }
     fseek(file, 0L, SEEK_END);
     size_t size = ftell(file);
@@ -31,12 +34,12 @@ static char *readfile(const char *path)
     char *buffer = (char *)malloc(size + 1);
     if (buffer == NULL) {
         fprintf(stderr, "Could not allocate memory to read %s\n", path);
-        exit(74);
+        exit(EX_IOERR);
     }
     size_t bytes_read = fread(buffer, sizeof(char), size, file);
     if (bytes_read < size) {
         fprintf(stderr, "Could not read file %s\n", path);
-        exit(74);
+        exit(EX_IOERR);
     }
     buffer[bytes_read] = '\0';
     fclose(file);
@@ -65,7 +68,7 @@ int main(int argc, char **argv)
         ret = runfile(&vm, argv[1]);
     } else {
         fprintf(stderr, "Usage: dplang [path]\n");
-        exit(64);
+        exit(EX_USAGE);
     }
 
     if (vm_free(&vm) != 0) {

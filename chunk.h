@@ -16,6 +16,7 @@ enum opcode {
     OP_TRUE,
     OP_GET_PROPERTY,
     OP_SET_PROPERTY,
+    OP_GET_SUPER,
     OP_EQUAL,
     OP_GREATER,
     OP_LESS,
@@ -28,9 +29,6 @@ enum opcode {
     OP_SHR,
     OP_NEGATE,
     OP_NOT,
-    OP_AND,
-    OP_OR,
-    OP_XOR,
     OP_DEFINE_GLOBAL,
     OP_GET_GLOBAL,
     OP_SET_GLOBAL,
@@ -50,10 +48,12 @@ enum opcode {
     OP_CLASS,
     OP_METHOD,
     OP_INVOKE,
+    OP_SUPER_INVOKE,
+    OP_INHERIT,
 };
 
 struct chunk {
-    size_t count;
+    int count;
     size_t capacity;
     uint8_t *code;
     int *lines;

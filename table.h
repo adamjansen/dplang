@@ -22,6 +22,6 @@ bool table_get(struct table *table, struct object_string *key, value *value);
 void table_free(struct table *table);
 bool table_delete(struct table *table, struct object_string *key);
 void table_add_all(struct table *from, struct table *to);
-struct object_string *table_find_string(struct table *table, const char *chars, int length, hash_t hash);
+struct object_string *table_find_string(struct table *table, const char *chars, size_t length, hash_t hash);
 void table_dump(struct table *table);
 #endif

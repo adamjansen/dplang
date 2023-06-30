@@ -7,12 +7,16 @@
 
 #include <stdio.h>
 #include <stddef.h>
+#define GC_INITIAL_TRIGGER_BYTES 1024
+
+#define GRAY_LIST_MIN_SIZE      8
+#define GRAY_LIST_GROWTH_FACTOR 2
 
 // #define DEBUG_LOG_GC
 
 static bool enabled = false;
 static size_t total_allocated = 0;
-static size_t next_gc = 1024;
+static size_t next_gc = GC_INITIAL_TRIGGER_BYTES;
 
 static size_t gray_capacity = 0;
 static size_t gray_count = 0;
@@ -24,21 +28,23 @@ struct vm *gc_vm = NULL;
 
 void gc_init(struct vm *vm)
 {
-    gray_capacity = 8;
+    gray_capacity = GRAY_LIST_MIN_SIZE;
     gray_count = 0;
     gray_stack = (struct object **)realloc(gray_stack, sizeof(struct object *) * gray_capacity);
     gc_vm = vm;
     // total_allocated = 0;
-    next_gc = 1024;
+    next_gc = GC_INITIAL_TRIGGER_BYTES;
     enabled = true;
 }
 
 void gc_mark_object(struct object *object)
 {
-    if (object == NULL)
+    if (object == NULL) {
         return;
-    if (object->marked)
+    }
+    if (object->marked) {
         return;
+    }
 
 #ifdef DEBUG_LOG_GC
     printf("%p mark ", (void *)object);
@@ -49,18 +55,21 @@ void gc_mark_object(struct object *object)
     object->marked = true;
 
     if (gray_capacity < gray_count + 1) {
-        gray_capacity = (gray_count < 8) ? 8 : gray_capacity * 2;
+        gray_capacity =
+            (gray_count < GRAY_LIST_MIN_SIZE) ? GRAY_LIST_MIN_SIZE : gray_capacity * GRAY_LIST_GROWTH_FACTOR;
         gray_stack = (struct object **)realloc(gray_stack, sizeof(struct object *) * gray_capacity);
-        if (gray_stack == NULL)
+        if (gray_stack == NULL) {
             exit(1);
+        }
     }
     gray_stack[gray_count++] = object;
 }
 
 void gc_mark_value(value value)
 {
-    if (IS_OBJECT(value))
+    if (IS_OBJECT(value)) {
         gc_mark_object(AS_OBJECT(value));
+    }
 }
 
 static void gc_mark_array(struct value_array *array)
@@ -91,11 +100,12 @@ static void gc_blacken_object(struct object *object)
             gc_mark_object((struct object *)bound->method);
             break;
         }
-        case OBJECT_CLASS:
+        case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)object;
             gc_mark_object((struct object *)klass->name);
             gc_mark_table(&klass->methods);
             break;
+        }
         case OBJECT_INSTANCE: {
             struct object_instance *instance = (struct object_instance *)object;
             gc_mark_object((struct object *)instance->klass);

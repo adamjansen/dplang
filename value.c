@@ -16,25 +16,24 @@ int value_array_init(struct value_array *varray)
     return 0;
 }
 
-int value_array_write(struct value_array *value_array, value val)
+int value_array_write(struct value_array *varray, value val)
 {
-    if (value_array->capacity < value_array->count + 1) {
-        size_t prev_cap = value_array->capacity;
-        value_array->capacity *= VARRAY_GROWTH_FACTOR;
-        value_array->values = (value *)reallocate(value_array->values, prev_cap * sizeof(value_array->values[0]),
-                                                  value_array->capacity * sizeof(value_array->values[0]));
+    if (varray->capacity < varray->count + 1) {
+        size_t prev_cap = varray->capacity;
+        varray->capacity *= VARRAY_GROWTH_FACTOR;
+        varray->values = (value *)reallocate(varray->values, prev_cap * sizeof(varray->values[0]),
+                                             varray->capacity * sizeof(varray->values[0]));
     }
 
-    value_array->values[value_array->count++] = val;
+    varray->values[varray->count++] = val;
 
     return 0;
 }
 
-int value_array_free(struct value_array *value_array)
+int value_array_free(struct value_array *varray)
 {
-    value_array->values =
-        (value *)reallocate(value_array->values, value_array->capacity * sizeof(value_array->values[0]), 0);
-    value_array->capacity = value_array->count = 0;
+    varray->values = (value *)reallocate(varray->values, varray->capacity * sizeof(varray->values[0]), 0);
+    varray->capacity = varray->count = 0;
     return 0;
 }
 
@@ -68,8 +67,9 @@ int value_print(value val)
 
 bool value_equal(value a, value b)
 {
-    if (a.type != b.type)
+    if (a.type != b.type) {
         return false;
+    }
     switch (a.type) {
         case VAL_BOOL:
             return AS_BOOL(a) == AS_BOOL(b);

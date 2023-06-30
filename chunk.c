@@ -6,7 +6,7 @@
 #include "object.h"
 #include "value.h"
 
-#define ARRAY_SIZE(a) sizeof(a) / sizeof(a[0])
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
 
 int chunk_init(struct chunk *chunk)
 {
@@ -28,13 +28,13 @@ int chunk_free(struct chunk *chunk)
     return 0;
 }
 
-static int simple_instruction(const char *name, int offset)
+static size_t simple_instruction(const char *name, size_t offset)
 {
     printf("%s\n", name);
     return offset + 1;
 }
 
-static int constant_instruction(const char *name, struct chunk *chunk, int offset)
+static size_t constant_instruction(const char *name, struct chunk *chunk, size_t offset)
 {
     uint8_t constant_idx = chunk->code[offset + 1];
     printf("%-16s %4d '", name, constant_idx);
@@ -43,23 +43,23 @@ static int constant_instruction(const char *name, struct chunk *chunk, int offse
     return offset + 2;
 }
 
-static int byte_instruction(const char *name, struct chunk *chunk, int offset)
+static size_t byte_instruction(const char *name, struct chunk *chunk, size_t offset)
 {
     uint8_t slot = chunk->code[offset + 1];
     printf("%-16s %4d\n", name, slot);
     return offset + 2;
 }
 
-static int jump_instruction(const char *name, struct chunk *chunk, int offset, int sign)
+static size_t jump_instruction(const char *name, struct chunk *chunk, size_t offset, int sign)
 {
-    uint16_t target = (uint16_t)(chunk->code[offset + 1] << 8);
+    uint16_t target = (uint16_t)(chunk->code[offset + 1] << 8);  // NOLINT(readability-magic-numbers)
     target |= chunk->code[offset + 2];
-    printf("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * target);
+    printf("%-16s %4d -> %d\n", name, offset, (int)(offset + 3) + sign * target);
     // 16-bit jump destination, plus implicit pop of condition
     return offset + 3;
 }
 
-static int invoke_instruction(const char *name, struct chunk *chunk, int offset)
+static size_t invoke_instruction(const char *name, struct chunk *chunk, size_t offset)
 {
     uint8_t constant = chunk->code[offset + 1];
     uint8_t arg_count = chunk->code[offset + 2];
@@ -87,9 +87,6 @@ static const char *opnames[] = {
     [OP_SHR] = "OP_SHR",
     [OP_NEGATE] = "OP_NEGATE",
     [OP_NOT] = "OP_NOT",
-    [OP_AND] = "OP_AND",
-    [OP_OR] = "OP_OR",
-    [OP_XOR] = "OP_XOR",
     [OP_DEFINE_GLOBAL] = "OP_DEFINE_GLOBAL",
     [OP_GET_GLOBAL] = "OP_GET_GLOBAL",
     [OP_SET_GLOBAL] = "OP_SET_GLOBAL",
@@ -111,6 +108,9 @@ static const char *opnames[] = {
     [OP_SET_PROPERTY] = "OP_SET_PROPERTY",
     [OP_METHOD] = "OP_METHOD",
     [OP_INVOKE] = "OP_INVOKE",
+    [OP_INHERIT] = "OP_INHERIT",
+    [OP_GET_SUPER] = "OP_GET_SUPER",
+    [OP_SUPER_INVOKE] = "OP_SUPER_INVOKE",
 };
 
 static const char *opcode_to_string(enum opcode op)
@@ -142,6 +142,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_GET_PROPERTY:
         case OP_SET_PROPERTY:
         case OP_METHOD:
+        case OP_GET_SUPER:
             return constant_instruction(opname, chunk, offset);
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:
@@ -150,6 +151,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_CALL:
             return byte_instruction(opname, chunk, offset);
         case OP_INVOKE:
+        case OP_SUPER_INVOKE:
             return invoke_instruction(opname, chunk, offset);
         case OP_CLOSURE: {
             offset++;
@@ -183,7 +185,6 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_TRUE:
         case OP_FALSE:
         case OP_NOT:
-        case OP_XOR:
         case OP_EQUAL:
         case OP_GREATER:
         case OP_LESS:
@@ -193,6 +194,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_PRINT:
         case OP_POP:
         case OP_CLOSE_UPVALUE:
+        case OP_INHERIT:
             return simple_instruction(opname, offset);
 
         default:
@@ -218,6 +220,7 @@ int chunk_write_byte(struct chunk *chunk, uint8_t byte, int line)
     return chunk_write_bytes(chunk, &byte, sizeof(byte), line);
 }
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 int chunk_write_bytes(struct chunk *chunk, uint8_t *bytes, size_t count, int line)
 {
     if (chunk->capacity < chunk->count + count) {
@@ -235,6 +238,7 @@ int chunk_write_bytes(struct chunk *chunk, uint8_t *bytes, size_t count, int lin
 
     return 0;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
 int chunk_write_opcode(struct chunk *chunk, enum opcode op, void *operands, size_t len, int line)
 {
@@ -253,8 +257,9 @@ int chunk_add_constant(struct chunk *chunk, value val)
             return i;
         }
         if (IS_OBJECT(val) && IS_OBJECT(chunk->constants.values[i])) {
-            if (object_equal(AS_OBJECT(val), AS_OBJECT(chunk->constants.values[i])))
+            if (object_equal(AS_OBJECT(val), AS_OBJECT(chunk->constants.values[i]))) {
                 return i;
+            }
         }
     }
     value_array_write(&chunk->constants, val);
