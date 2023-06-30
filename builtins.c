@@ -42,6 +42,11 @@ static value native_round(int argc, value *args)
     return NUMBER_VAL(round(AS_NUMBER(args[0])));
 }
 
+static value native_sqrt(int argc, value *args)
+{
+    return NUMBER_VAL(sqrt(AS_NUMBER(args[0])));
+}
+
 static value native_sum(int arg_count, value *args)
 {
     double sum = 0;
@@ -55,6 +60,7 @@ struct builtin_function_info builtins[] = {
     {"max",   native_max  },
     {"min",   native_min  },
     {"round", native_round},
+    {"sqrt",  native_sqrt },
     {"sum",   native_sum  },
     {NULL,    NULL        },
 };
