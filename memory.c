@@ -68,6 +68,15 @@ static void gc_mark_array(struct value_array *array)
     for (int i = 0; i < array->count; i++) { gc_mark_value(array->values[i]); }
 }
 
+void gc_mark_table(struct table *table)
+{
+    for (int i = 0; i < table->capacity; i++) {
+        struct entry *entry = &table->entries[i];
+        gc_mark_object((struct object *)entry->key);
+        gc_mark_value(entry->value);
+    }
+}
+
 static void gc_blacken_object(struct object *object)
 {
 #ifdef DEBUG_LOG_GC
@@ -76,6 +85,16 @@ static void gc_blacken_object(struct object *object)
     printf("\n");
 #endif
     switch (object->type) {
+        case OBJECT_CLASS:
+            struct object_class *klass = (struct object_class *)object;
+            gc_mark_object((struct object *)klass->name);
+            break;
+        case OBJECT_INSTANCE: {
+            struct object_instance *instance = (struct object_instance *)object;
+            gc_mark_object((struct object *)instance->klass);
+            gc_mark_table(&instance->fields);
+            break;
+        }
         case OBJECT_UPVALUE:
             gc_mark_value(((struct object_upvalue *)object)->closed);
             break;
@@ -94,15 +113,6 @@ static void gc_blacken_object(struct object *object)
         case OBJECT_NATIVE:
         case OBJECT_STRING:
             break;
-    }
-}
-
-void gc_mark_table(struct table *table)
-{
-    for (int i = 0; i < table->capacity; i++) {
-        struct entry *entry = &table->entries[i];
-        gc_mark_object((struct object *)entry->key);
-        gc_mark_value(entry->value);
     }
 }
 

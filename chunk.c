@@ -96,6 +96,9 @@ static const char *opnames[] = {
     [OP_CLOSURE] = "OP_CLOSURE",
     [OP_CLOSE_UPVALUE] = "OP_CLOSE_UPVALUE",
     [OP_RETURN] = "OP_RETURN",
+    [OP_CLASS] = "OP_CLASS",
+    [OP_GET_PROPERTY] = "OP_GET_PROPERTY",
+    [OP_SET_PROPERTY] = "OP_SET_PROPERTY",
 };
 
 static const char *opcode_to_string(enum opcode op)
@@ -123,6 +126,9 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_DEFINE_GLOBAL:
         case OP_GET_GLOBAL:
         case OP_SET_GLOBAL:
+        case OP_CLASS:
+        case OP_GET_PROPERTY:
+        case OP_SET_PROPERTY:
             return constant_instruction(opname, chunk, offset);
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:

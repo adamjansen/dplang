@@ -48,6 +48,7 @@ static void variable(struct parser *parser, enum precedence precedence, void *us
 static void and_(struct parser *parser, enum precedence precedence, void *userdata);
 static void or_(struct parser *parser, enum precedence precedence, void *userdata);
 static void call(struct parser *parser, enum precedence precedence, void *userdata);
+static void dot(struct parser *parser, enum precedence precedence, void *userdata);
 
 struct parse_rule rules[] = {
     [TOKEN_LEFT_PAREN] = {grouping, call,   PREC_CALL      },
@@ -55,7 +56,7 @@ struct parse_rule rules[] = {
     [TOKEN_LEFT_BRACE] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_RIGHT_BRACE] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_COMMA] = {NULL,     NULL,   PREC_NONE      },
-    [TOKEN_DOT] = {NULL,     NULL,   PREC_NONE      },
+    [TOKEN_DOT] = {NULL,     dot,    PREC_CALL      },
     [TOKEN_MINUS] = {unary,    binary, PREC_TERM      },
     [TOKEN_PLUS] = {NULL,     binary, PREC_TERM      },
     [TOKEN_SEMICOLON] = {NULL,     NULL,   PREC_NONE      },
@@ -393,6 +394,19 @@ static void function(struct compiler *compiler, enum function_type type)
     }
 }
 
+static void class_declaration(struct compiler *compiler)
+{
+    parser_consume(compiler->parser, TOKEN_IDENTIFIER, "Expect class name");
+    uint8_t name_constant = identifier_constant(compiler, &compiler->parser->previous);
+    declare_variable(compiler);
+
+    emit_opcode_args(compiler, OP_CLASS, &name_constant, sizeof(name_constant));
+    define_variable(compiler, name_constant);
+
+    parser_consume(compiler->parser, TOKEN_LEFT_BRACE, "Expect '{' before class body");
+    parser_consume(compiler->parser, TOKEN_RIGHT_BRACE, "Expect '}' after class body");
+}
+
 static void func_declaration(struct compiler *compiler)
 {
     uint8_t global = parse_variable(compiler, "Expected function name");
@@ -525,7 +539,9 @@ static void while_statement(struct compiler *compiler)
 
 static void declaration(struct compiler *compiler)
 {
-    if (parser_match(compiler->parser, TOKEN_FUNC)) {
+    if (parser_match(compiler->parser, TOKEN_CLASS)) {
+        class_declaration(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_FUNC)) {
         func_declaration(compiler);
     } else if (parser_match(compiler->parser, TOKEN_VAR)) {
         var_declaration(compiler);
@@ -666,6 +682,23 @@ static void call(struct parser *parser, enum precedence precedence, void *userda
 
     uint8_t arg_count = argument_list(compiler);
     emit_opcode_args(compiler, OP_CALL, &arg_count, sizeof(arg_count));
+}
+
+static void dot(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+
+    parser_consume(parser, TOKEN_IDENTIFIER, "Expect property name after '.'");
+    uint8_t name = identifier_constant(compiler, &parser->previous);
+
+    bool assign_ok = precedence <= PREC_ASSIGNMENT;
+
+    if (assign_ok && parser_match(parser, TOKEN_EQUAL)) {
+        expression(compiler);
+        emit_opcode_args(compiler, OP_SET_PROPERTY, &name, sizeof(name));
+    } else {
+        emit_opcode_args(compiler, OP_GET_PROPERTY, &name, sizeof(name));
+    }
 }
 
 static void unary(struct parser *parser, enum precedence precedence, void *userdata)

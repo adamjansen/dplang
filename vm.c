@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <time.h>
 
-// #define DEBUG_TRACE_EXEC
+#define DEBUG_TRACE_EXEC
 
 static inline double fshl(double a, double b)
 {
@@ -105,6 +105,11 @@ static bool call_value(struct vm *vm, value callee, int arg_count)
 {
     if (IS_OBJECT(callee)) {
         switch (OBJECT_TYPE(callee)) {
+            case OBJECT_CLASS: {
+                struct object_class *klass = AS_CLASS(callee);
+                vm->sp[-arg_count - 1] = OBJECT_VAL(object_instance_new(klass));
+                return true;
+            }
             case OBJECT_NATIVE: {
                 native_function native = AS_NATIVE(callee);
                 value result = native(arg_count, vm->sp - arg_count);
@@ -306,6 +311,34 @@ int vm_run(struct vm *vm)
                 *frame->closure->upvalues[slot]->location = stack_peek(vm, 0);
                 break;
             }
+            case OP_GET_PROPERTY: {
+                if (!IS_INSTANCE(stack_peek(vm, 0))) {
+                    vm_runtime_error(vm, "Only instances have properties");
+                    return -1;
+                }
+                struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 0));
+                struct object_string *name = READ_STRING();
+                value value;
+                if (table_get(&instance->fields, name, &value)) {
+                    stack_pop(vm);  // instance
+                    stack_push(vm, value);
+                    break;
+                }
+                vm_runtime_error(vm, "Undefined property '%s'", name->data);
+                return -1;
+            }
+            case OP_SET_PROPERTY: {
+                if (!IS_INSTANCE(stack_peek(vm, 1))) {
+                    vm_runtime_error(vm, "Only instances have fields");
+                    return -1;
+                }
+                struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 1));
+                table_set(&instance->fields, READ_STRING(), stack_peek(vm, 0));
+                value value = stack_pop(vm);
+                stack_pop(vm);
+                stack_push(vm, value);
+                break;
+            }
             case OP_EQUAL: {
                 value b = stack_pop(vm);
                 value a = stack_pop(vm);
@@ -436,6 +469,9 @@ int vm_run(struct vm *vm)
                     return -1;
                 }
                 stack_push(vm, NUMBER_VAL(-AS_NUMBER(stack_pop(vm))));
+                break;
+            case OP_CLASS:
+                stack_push(vm, OBJECT_VAL(object_class_new(READ_STRING())));
                 break;
         }
     }

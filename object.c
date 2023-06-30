@@ -40,6 +40,13 @@ struct object_string *object_string_allocate(const char *s, size_t length)
     return object_string_take(data, length);
 }
 
+struct object_class *object_class_new(struct object_string *name)
+{
+    struct object_class *klass = ALLOCATE_OBJECT(struct object_class, OBJECT_CLASS);
+    klass->name = name;
+    return klass;
+}
+
 struct object_upvalue *object_upvalue_new(value *slot)
 {
     struct object_upvalue *upvalue = ALLOCATE_OBJECT(struct object_upvalue, OBJECT_UPVALUE);
@@ -57,6 +64,14 @@ struct object_function *object_function_new()
     func->name = NULL;
     chunk_init(&func->chunk);
     return func;
+}
+
+struct object_instance *object_instance_new(struct object_class *klass)
+{
+    struct object_instance *instance = ALLOCATE_OBJECT(struct object_instance, OBJECT_INSTANCE);
+    instance->klass = klass;
+    table_init(&instance->fields);
+    return instance;
 }
 
 struct object_closure *object_closure_new(struct object_function *function)
@@ -86,6 +101,16 @@ static void function_print(struct object_function *function)
 int object_print(struct object *obj)
 {
     switch (obj->type) {
+        case OBJECT_CLASS: {
+            struct object_class *klass = (struct object_class *)obj;
+            object_print((struct object *)klass->name);
+            break;
+        }
+        case OBJECT_INSTANCE: {
+            struct object_instance *instance = (struct object_instance *)obj;
+            printf("%s instance", instance->klass->name->data);
+            break;
+        }
         case OBJECT_STRING: {
             struct object_string *s = (struct object_string *)obj;
             printf("%s", s->data);
@@ -138,10 +163,35 @@ bool object_equal(struct object *a, struct object *b)
 void object_free(struct object *obj)
 {
     switch (obj->type) {
+        case OBJECT_CLASS: {
+            struct object_class *klass = (struct object_class *)obj;
+            reallocate(obj, sizeof(*klass), 0);
+            break;
+        }
+        case OBJECT_CLOSURE: {
+            struct object_closure *closure = (struct object_closure *)obj;
+            closure->upvalues = reallocate(closure->upvalues, closure->nupvalues * sizeof(struct object_closure *), 0);
+            /* Don't free the function here, other closures may reference
+             * the same function
+             */
+            reallocate(obj, sizeof(*closure), 0);
+            break;
+        }
         case OBJECT_FUNCTION: {
             struct object_function *func = (struct object_function *)obj;
             chunk_free(&func->chunk);
             reallocate(obj, sizeof(*func), 0);
+            break;
+        }
+        case OBJECT_INSTANCE: {
+            struct object_instance *instance = (struct object_instance *)obj;
+            table_free(&instance->fields);
+            reallocate(obj, sizeof(*instance), 0);
+            break;
+        }
+        case OBJECT_NATIVE: {
+            struct object_native *native = (struct object_native *)obj;
+            reallocate(obj, sizeof(*native), 0);
             break;
         }
         case OBJECT_STRING: {
@@ -153,20 +203,6 @@ void object_free(struct object *obj)
         case OBJECT_UPVALUE: {
             struct object_upvalue *upvalue = (struct object_upvalue *)obj;
             reallocate(obj, sizeof(*upvalue), 0);
-            break;
-        }
-        case OBJECT_NATIVE: {
-            struct object_native *native = (struct object_native *)obj;
-            reallocate(obj, sizeof(*native), 0);
-            break;
-        }
-        case OBJECT_CLOSURE: {
-            struct object_closure *closure = (struct object_closure *)obj;
-            closure->upvalues = reallocate(closure->upvalues, closure->nupvalues * sizeof(struct object_closure *), 0);
-            /* Don't free the function here, other closures may reference
-             * the same function
-             */
-            reallocate(obj, sizeof(*closure), 0);
             break;
         }
     }
