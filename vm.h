@@ -27,6 +27,7 @@ struct vm {
     struct table strings;
     struct object_upvalue *open_upvalues;
     struct object *objects;
+    struct object_string *init_string;
 };
 
 int vm_init(struct vm *vm);

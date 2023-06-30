@@ -44,7 +44,16 @@ struct object_class *object_class_new(struct object_string *name)
 {
     struct object_class *klass = ALLOCATE_OBJECT(struct object_class, OBJECT_CLASS);
     klass->name = name;
+    table_init(&klass->methods);
     return klass;
+}
+
+struct object_bound_method *object_bound_method_new(value receiver, struct object_closure *method)
+{
+    struct object_bound_method *bound = ALLOCATE_OBJECT(struct object_bound_method, OBJECT_BOUND_METHOD);
+    bound->receiver = receiver;
+    bound->method = method;
+    return bound;
 }
 
 struct object_upvalue *object_upvalue_new(value *slot)
@@ -101,6 +110,11 @@ static void function_print(struct object_function *function)
 int object_print(struct object *obj)
 {
     switch (obj->type) {
+        case OBJECT_BOUND_METHOD: {
+            struct object_bound_method *bound = (struct object_bound_method *)obj;
+            function_print(bound->method->function);
+            break;
+        }
         case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)obj;
             object_print((struct object *)klass->name);
@@ -163,8 +177,14 @@ bool object_equal(struct object *a, struct object *b)
 void object_free(struct object *obj)
 {
     switch (obj->type) {
+        case OBJECT_BOUND_METHOD: {
+            struct object_bound_method *bound = (struct object_bound_method *)obj;
+            reallocate(obj, sizeof(*bound), 0);
+            break;
+        }
         case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)obj;
+            table_free(&klass->methods);
             reallocate(obj, sizeof(*klass), 0);
             break;
         }

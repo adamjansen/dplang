@@ -59,6 +59,16 @@ static int jump_instruction(const char *name, struct chunk *chunk, int offset, i
     return offset + 3;
 }
 
+static int invoke_instruction(const char *name, struct chunk *chunk, int offset)
+{
+    uint8_t constant = chunk->code[offset + 1];
+    uint8_t arg_count = chunk->code[offset + 2];
+    printf("%-16s (%d args) %4d '", name, arg_count, constant);
+    value_print(chunk->constants.values[constant]);
+    printf("'\n");
+    return offset + 3;
+}
+
 static const char *opnames[] = {
     [OP_CONSTANT] = "OP_CONSTANT",
     [OP_NIL] = "OP_NIL",
@@ -99,6 +109,8 @@ static const char *opnames[] = {
     [OP_CLASS] = "OP_CLASS",
     [OP_GET_PROPERTY] = "OP_GET_PROPERTY",
     [OP_SET_PROPERTY] = "OP_SET_PROPERTY",
+    [OP_METHOD] = "OP_METHOD",
+    [OP_INVOKE] = "OP_INVOKE",
 };
 
 static const char *opcode_to_string(enum opcode op)
@@ -129,6 +141,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_CLASS:
         case OP_GET_PROPERTY:
         case OP_SET_PROPERTY:
+        case OP_METHOD:
             return constant_instruction(opname, chunk, offset);
         case OP_GET_LOCAL:
         case OP_SET_LOCAL:
@@ -136,7 +149,8 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_SET_UPVALUE:
         case OP_CALL:
             return byte_instruction(opname, chunk, offset);
-
+        case OP_INVOKE:
+            return invoke_instruction(opname, chunk, offset);
         case OP_CLOSURE: {
             offset++;
             uint8_t constant = chunk->code[offset++];

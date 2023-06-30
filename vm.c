@@ -105,9 +105,21 @@ static bool call_value(struct vm *vm, value callee, int arg_count)
 {
     if (IS_OBJECT(callee)) {
         switch (OBJECT_TYPE(callee)) {
+            case OBJECT_BOUND_METHOD: {
+                struct object_bound_method *bound = AS_BOUND_METHOD(callee);
+                vm->sp[-arg_count - 1] = bound->receiver;  // set 'this' to bound instance
+                return call(vm, bound->method, arg_count);
+            }
             case OBJECT_CLASS: {
                 struct object_class *klass = AS_CLASS(callee);
                 vm->sp[-arg_count - 1] = OBJECT_VAL(object_instance_new(klass));
+                value initializer;
+                if (table_get(&klass->methods, vm->init_string, &initializer)) {
+                    return call(vm, AS_CLOSURE(initializer), arg_count);
+                } else if (arg_count != 0) {
+                    vm_runtime_error(vm, "Expected 0 arguments, but got %d", arg_count);
+                    return false;
+                }
                 return true;
             }
             case OBJECT_NATIVE: {
@@ -126,6 +138,51 @@ static bool call_value(struct vm *vm, value callee, int arg_count)
     }
     vm_runtime_error(vm, "Object not callable");
     return false;
+}
+
+static bool invoke_from_class(struct vm *vm, struct object_class *klass, struct object_string *name, int arg_count)
+{
+    value method;
+    if (!table_get(&klass->methods, name, &method)) {
+        vm_runtime_error(vm, "Undefined property '%s'", name->data);
+        return false;
+    }
+    return call(vm, AS_CLOSURE(method), arg_count);
+}
+
+static bool invoke(struct vm *vm, struct object_string *name, int arg_count)
+{
+    value receiver = stack_peek(vm, arg_count);
+
+    if (!IS_INSTANCE(receiver)) {
+        vm_runtime_error(vm, "Only instances have methods");
+        return false;
+    }
+
+    struct object_instance *instance = AS_INSTANCE(receiver);
+
+    value value;
+    if (table_get(&instance->fields, name, &value)) {
+        vm->sp[-arg_count - 1] = value;
+        return call_value(vm, value, arg_count);
+    }
+
+    return invoke_from_class(vm, instance->klass, name, arg_count);
+}
+
+static bool bind_method(struct vm *vm, struct object_class *klass, struct object_string *name)
+{
+    value method;
+    if (!table_get(&klass->methods, name, &method)) {
+        vm_runtime_error(vm, "Undefined property '%s'", name->data);
+        return false;
+    }
+
+    struct object_bound_method *bound = object_bound_method_new(stack_peek(vm, 0), AS_CLOSURE(method));
+
+    stack_pop(vm);
+    stack_push(vm, OBJECT_VAL(bound));
+    return true;
 }
 
 static struct object_upvalue *capture_upvalue(struct vm *vm, value *local)
@@ -161,6 +218,14 @@ static void close_upvalues(struct vm *vm, value *last)
     }
 }
 
+static void define_method(struct vm *vm, struct object_string *name)
+{
+    value method = stack_peek(vm, 0);
+    struct object_class *klass = AS_CLASS(stack_peek(vm, 1));
+    table_set(&klass->methods, name, method);
+    stack_pop(vm);
+}
+
 struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
 {
     uint32_t hash = hash_string(s, len);
@@ -171,12 +236,16 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
     table_set(&vm->strings, obj, NIL_VAL);
     return obj;
 }
+
 int vm_init(struct vm *vm)
 {
     stack_reset(vm);
     vm->objects = NULL;
     table_init(&vm->strings);
     table_init(&vm->globals);
+
+    vm->init_string = NULL;
+    vm->init_string = object_string_allocate("init", 4);
 
     for (struct builtin_function_info *builtin = builtins; builtin->function != NULL; builtin++) {
         define_native(vm, builtin->name, builtin->function);
@@ -194,6 +263,7 @@ int vm_free(struct vm *vm)
 {
     table_free(&vm->globals);
     table_free(&vm->strings);
+    vm->init_string = NULL;
     // TODO: free_objects();
     return 0;
 }
@@ -324,7 +394,9 @@ int vm_run(struct vm *vm)
                     stack_push(vm, value);
                     break;
                 }
-                vm_runtime_error(vm, "Undefined property '%s'", name->data);
+                if (!bind_method(vm, instance->klass, name)) {
+                    return -1;
+                }
                 return -1;
             }
             case OP_SET_PROPERTY: {
@@ -430,6 +502,15 @@ int vm_run(struct vm *vm)
                 frame = &vm->frames[vm->frame_count - 1];
                 break;
             }
+            case OP_INVOKE: {
+                struct object_string *method = READ_STRING();
+                int arg_count = READ_U8();
+                if (!invoke(vm, method, arg_count)) {
+                    return -1;
+                }
+                frame = &vm->frames[vm->frame_count - 1];
+                break;
+            }
             case OP_CLOSURE: {
                 struct object_function *function = AS_FUNCTION(READ_CONSTANT());
                 struct object_closure *closure = object_closure_new(function);
@@ -472,6 +553,9 @@ int vm_run(struct vm *vm)
                 break;
             case OP_CLASS:
                 stack_push(vm, OBJECT_VAL(object_class_new(READ_STRING())));
+                break;
+            case OP_METHOD:
+                define_method(vm, READ_STRING());
                 break;
         }
     }

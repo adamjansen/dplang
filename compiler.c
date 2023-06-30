@@ -24,7 +24,13 @@ struct upvalue {
 
 enum function_type {
     TYPE_FUNCTION,
+    TYPE_INITIALIZER,
+    TYPE_METHOD,
     TYPE_SCRIPT,
+};
+
+struct class_compiler {
+    struct class_compiler *enclosing;
 };
 
 struct compiler {
@@ -36,6 +42,7 @@ struct compiler {
     struct upvalue upvalues[UINT8_MAX + 1];
     int scope_level;
     struct compiler *enclosing;
+    struct class_compiler *current_class;
 };
 
 static void grouping(struct parser *parser, enum precedence precedence, void *userdata);
@@ -49,6 +56,7 @@ static void and_(struct parser *parser, enum precedence precedence, void *userda
 static void or_(struct parser *parser, enum precedence precedence, void *userdata);
 static void call(struct parser *parser, enum precedence precedence, void *userdata);
 static void dot(struct parser *parser, enum precedence precedence, void *userdata);
+static void this_(struct parser *parser, enum precedence precedence, void *userdata);
 
 struct parse_rule rules[] = {
     [TOKEN_LEFT_PAREN] = {grouping, call,   PREC_CALL      },
@@ -91,7 +99,7 @@ struct parse_rule rules[] = {
     [TOKEN_PRINT] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_RETURN] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_SUPER] = {NULL,     NULL,   PREC_NONE      },
-    [TOKEN_THIS] = {NULL,     NULL,   PREC_NONE      },
+    [TOKEN_THIS] = {this_,    NULL,   PREC_NONE      },
     [TOKEN_TRUE] = {literal,  NULL,   PREC_NONE      },
     [TOKEN_VAR] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_WHILE] = {NULL,     NULL,   PREC_NONE      },
@@ -166,7 +174,13 @@ static void patch_jump(struct compiler *compiler, int offset)
 
 static void emit_return(struct compiler *compiler)
 {
-    emit_opcode(compiler, OP_NIL);
+    // Class initializers implicitly return initialized object
+    if (compiler->type == TYPE_INITIALIZER) {
+        uint8_t zero = 0;
+        emit_opcode_args(compiler, OP_GET_LOCAL, &zero, sizeof(zero));
+    } else {
+        emit_opcode(compiler, OP_NIL);
+    }
     emit_opcode(compiler, OP_RETURN);
 }
 
@@ -199,8 +213,13 @@ static void compiler_init(struct compiler *compiler, struct parser *parser, enum
     struct local *local = &compiler->locals[compiler->nlocals++];
     local->level = 0;
     local->is_captured = false;
-    local->name.start = "";
-    local->name.length = 0;
+    if (type != TYPE_FUNCTION) {
+        local->name.start = "this";
+        local->name.length = 4;
+    } else {
+        local->name.start = "";
+        local->name.length = 0;
+    }
 }
 
 static uint8_t identifier_constant(struct compiler *compiler, struct token *name)
@@ -394,17 +413,43 @@ static void function(struct compiler *compiler, enum function_type type)
     }
 }
 
+static void method(struct compiler *compiler)
+{
+    parser_consume(compiler->parser, TOKEN_IDENTIFIER, "Expect method name");
+    uint8_t constant = identifier_constant(compiler, &compiler->parser->previous);
+    enum function_type type = TYPE_METHOD;
+    if (compiler->parser->previous.length == 4 && memcmp(compiler->parser->previous.start, "init", 4) == 0) {
+        type = TYPE_INITIALIZER;
+    }
+    function(compiler, type);
+    emit_opcode_args(compiler, OP_METHOD, &constant, sizeof(constant));
+}
+
 static void class_declaration(struct compiler *compiler)
 {
     parser_consume(compiler->parser, TOKEN_IDENTIFIER, "Expect class name");
+    struct token class_name = compiler->parser->previous;
     uint8_t name_constant = identifier_constant(compiler, &compiler->parser->previous);
     declare_variable(compiler);
 
     emit_opcode_args(compiler, OP_CLASS, &name_constant, sizeof(name_constant));
     define_variable(compiler, name_constant);
 
+    struct class_compiler class_compiler;
+    class_compiler.enclosing = compiler->current_class;
+    compiler->current_class = &class_compiler;
+
+    named_variable(compiler, class_name, false);
+
     parser_consume(compiler->parser, TOKEN_LEFT_BRACE, "Expect '{' before class body");
+    while (!parser_check(compiler->parser, TOKEN_RIGHT_BRACE) && !parser_check(compiler->parser, TOKEN_EOF)) {
+        method(compiler);
+    }
     parser_consume(compiler->parser, TOKEN_RIGHT_BRACE, "Expect '}' after class body");
+
+    emit_opcode(compiler, OP_POP);
+
+    compiler->current_class = compiler->current_class->enclosing;
 }
 
 static void func_declaration(struct compiler *compiler)
@@ -514,6 +559,10 @@ static void return_statement(struct compiler *compiler)
     if (parser_match(compiler->parser, TOKEN_SEMICOLON)) {
         emit_return(compiler);
     } else {
+        // Initializers can return early, but can't return a value
+        if (compiler->type == TYPE_INITIALIZER) {
+            parser_error(compiler->parser, "Can't return a value from an initializer");
+        }
         expression(compiler);
         parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after return value");
         emit_opcode(compiler, OP_RETURN);
@@ -696,6 +745,21 @@ static void dot(struct parser *parser, enum precedence precedence, void *userdat
     if (assign_ok && parser_match(parser, TOKEN_EQUAL)) {
         expression(compiler);
         emit_opcode_args(compiler, OP_SET_PROPERTY, &name, sizeof(name));
+    } else if (parser_match(parser, TOKEN_LEFT_PAREN)) {
+        /**
+         * Take advantage of an optimization opportunity.
+         *
+         * Instead of creating a bound method object that can be called later --
+         * usually in the next instruction -- fuse the steps together
+         * into a superinstruction that is more efficient for the
+         * typical case.
+         */
+        uint8_t arg_count = argument_list(compiler);
+        uint8_t args[2] = {
+            name,
+            arg_count,
+        };
+        emit_opcode_args(compiler, OP_INVOKE, args, sizeof(args));
     } else {
         emit_opcode_args(compiler, OP_GET_PROPERTY, &name, sizeof(name));
     }
@@ -777,6 +841,16 @@ static void variable(struct parser *parser, enum precedence precedence, void *us
     struct compiler *compiler = (struct compiler *)userdata;
     bool assign_ok = precedence <= PREC_ASSIGNMENT;
     named_variable(compiler, parser->previous, assign_ok);
+}
+
+static void this_(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    struct compiler *compiler = (struct compiler *)userdata;
+    if (compiler->current_class == NULL) {
+        parser_error(parser, "Cannot use 'this' outside of a class");
+        return;
+    }
+    variable(parser, PREC_PRIMARY, userdata);
 }
 
 static void and_(struct parser *parser, enum precedence precedence, void *userdata)

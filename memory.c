@@ -85,9 +85,16 @@ static void gc_blacken_object(struct object *object)
     printf("\n");
 #endif
     switch (object->type) {
+        case OBJECT_BOUND_METHOD: {
+            struct object_bound_method *bound = (struct object_bound_method *)object;
+            gc_mark_value(bound->receiver);
+            gc_mark_object((struct object *)bound->method);
+            break;
+        }
         case OBJECT_CLASS:
             struct object_class *klass = (struct object_class *)object;
             gc_mark_object((struct object *)klass->name);
+            gc_mark_table(&klass->methods);
             break;
         case OBJECT_INSTANCE: {
             struct object_instance *instance = (struct object_instance *)object;
@@ -137,6 +144,8 @@ static void gc_mark_roots(struct vm *vm)
     }
 
     gc_mark_table(&vm->globals);
+
+    gc_mark_object((struct object *)vm->init_string);
 }
 
 static void gc_trace_references()

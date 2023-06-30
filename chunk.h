@@ -48,6 +48,8 @@ enum opcode {
     OP_CLOSURE,
     OP_RETURN,
     OP_CLASS,
+    OP_METHOD,
+    OP_INVOKE,
 };
 
 struct chunk {
