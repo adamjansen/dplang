@@ -1,0 +1,39 @@
+#ifndef DPLANG_H
+#define DPANG_H
+
+/** @{ */
+
+/** Major version number
+ *
+ * A new major version indicates significant changes from previous
+ * versions. Applications may require significant refactoring.
+ * */
+#define DPLANG_VERSION_MAJOR @dplang_VERSION_MAJOR @
+/** Minor version number
+ *
+ * Minor versions introduce bug fixes or small features, but
+ * are generally compatible with existing applications.
+ * */
+#define DPLANG_VERSION_MINOR @dplang_VERSION_MINOR @
+/** Patch level of version number
+ *
+ * Patch versions typically introduce bug fixes.
+ */
+#define DPLANG_VERSION_PATCH @dplang_VERSION_PATCH @
+
+/** Version number as string
+ *
+ * The string is formatted as `M.m.r` where:
+ *
+ * M
+ * : Major version
+ *
+ * m
+ * : Minor version
+ *
+ * r
+ * : Patch/release level
+ */
+#define DPLANG_VERSION "@dplang_VERSION@"
+/** @} */
+#endif

@@ -1,0 +1,15 @@
+// [TEST] Parsing numeric literals
+print 123;     // expect: 123
+print 987654;  // expect: 987654
+print 0;       // expect: 0
+print -0;      // expect: -0
+
+print 123.456; // expect: 123.456
+print -0.001;  // expect: -0.001
+
+// [TEST] Hexadecimal literals
+print 0x123;   // expect: 3735928559
+
+// [TEST] Exponential notation
+print 1.234e5; // expect: 1234e5
+print -5.4321e-4;  // expect: 0.00054321
