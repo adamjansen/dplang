@@ -463,6 +463,7 @@ bool vm_op_add(struct vm *vm)
         char *data = reallocate(NULL, 0, new_length + 1);
         strncpy(data, s1->data, s1->length);
         strncpy(&data[s1->length], s2->data, s2->length);
+        data[new_length] = '\0';
         struct object_string *s3 = vm_intern_string(vm, data, new_length);
         stack_pop(vm);
         stack_pop(vm);
