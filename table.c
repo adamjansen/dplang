@@ -3,10 +3,26 @@
 #include <string.h>
 #include <stdio.h>
 
-#define TABLE_MAX_LOAD (3 / 4)
+#define TABLE_MAX_LOAD 75
 
 #define TABLE_MIN_CAPACITY  8
 #define TABLE_GROWTH_FACTOR 2
+
+/**
+ * Hash table load factor, as integer percent
+ */
+static inline int table_load(struct table *table)
+{
+    if (table->capacity == 0) {
+        return TABLE_MAX_LOAD + 1;
+    }
+    return 100 * table->count / table->capacity;  // NOLINT(readability-magic-numbers)
+}
+
+static inline int table_next_size(struct table *table)
+{
+    return (table->capacity < TABLE_MIN_CAPACITY) ? TABLE_MIN_CAPACITY : table->capacity * TABLE_GROWTH_FACTOR;
+}
 
 int table_init(struct table *table)
 {
@@ -20,6 +36,7 @@ void table_free(struct table *table)
 {
     table->entries = (struct entry *)reallocate(table->entries, table->capacity, 0);
 }
+
 static struct entry *find_entry(struct entry *entries, int capacity, struct object_string *key)
 {
     uint32_t index = key->hash & (capacity - 1);
@@ -44,8 +61,9 @@ static struct entry *find_entry(struct entry *entries, int capacity, struct obje
     }
 }
 
-static void adjust_capacity(struct table *table, int capacity)
+static void adjust_capacity(struct table *table)
 {
+    int capacity = table_next_size(table);
     struct entry *entries = (struct entry *)reallocate(NULL, 0, sizeof(struct entry) * capacity);
     for (int i = 0; i < capacity; i++) {
         entries[i].key = NULL;
@@ -109,10 +127,9 @@ struct object_string *table_find_string(struct table *table, const char *chars, 
 
 bool table_set(struct table *table, struct object_string *key, value value)
 {
-    if (table->count + 1 > table->capacity * TABLE_MAX_LOAD) {
-        int capacity =
-            (table->capacity < TABLE_MIN_CAPACITY) ? TABLE_MIN_CAPACITY : table->capacity * TABLE_GROWTH_FACTOR;
-        adjust_capacity(table, capacity);
+    int load = table_load(table);
+    if (load > TABLE_MAX_LOAD) {
+        adjust_capacity(table);
     }
     struct entry *entry = find_entry(table->entries, table->capacity, key);
     bool is_new_key = entry->key == NULL;
