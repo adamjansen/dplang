@@ -12,7 +12,7 @@ int value_array_init(struct value_array *varray)
 {
     varray->count = 0;
     varray->capacity = MIN_VARRAY_SIZE;
-    varray->values = (value *)reallocate(NULL, 0, MIN_VARRAY_SIZE);
+    varray->values = (value *)reallocate(NULL, 0, MIN_VARRAY_SIZE * sizeof(value));
     return 0;
 }
 
@@ -21,8 +21,8 @@ int value_array_write(struct value_array *varray, value val)
     if (varray->capacity < varray->count + 1) {
         size_t prev_cap = varray->capacity;
         varray->capacity *= VARRAY_GROWTH_FACTOR;
-        varray->values = (value *)reallocate(varray->values, prev_cap * sizeof(varray->values[0]),
-                                             varray->capacity * sizeof(varray->values[0]));
+        varray->values =
+            (value *)reallocate(varray->values, prev_cap * sizeof(value), varray->capacity * sizeof(value));
     }
 
     varray->values[varray->count++] = val;
