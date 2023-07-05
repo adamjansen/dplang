@@ -755,6 +755,7 @@ int vm_dump_bytecode(struct vm *vm, struct object_function *function)
 
 int vm_interpret(struct vm *vm, const char *source)
 {
+    gc_init(vm);
     struct object_function *function = compile(source);
     if (function == NULL) {
         return -1;
@@ -762,7 +763,7 @@ int vm_interpret(struct vm *vm, const char *source)
 
     vm_dump_bytecode(vm, function);
 
-    gc_init(vm);
+    gc_mark_object((struct object *)function);
 
     stack_push(vm, OBJECT_VAL(function));
 
