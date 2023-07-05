@@ -190,6 +190,9 @@ static void gc_sweep()
 
 void *reallocate(void *p, size_t prev_size, size_t new_size)
 {
+    if ((p == NULL) && (new_size == 0)) {
+        return NULL;
+    }
     total_allocated += new_size - prev_size;
 #ifdef DEBUG_STRESS_GC
     if (new_size > prev_size) {
@@ -201,18 +204,23 @@ void *reallocate(void *p, size_t prev_size, size_t new_size)
         gc_collect();
     }
 
+    if (new_size == 0) {
+#ifdef DEBUG_LOG_GC
+        printf("%p free %zu bytes\n", p, prev_size);
+#endif
+        free(p);
+        return NULL;
+    }
+
 #ifdef DEBUG_LOG_GC
     if (prev_size == 0) {
         printf("allocating %zu bytes\n", new_size);
-    } else if (new_size == 0) {
-        printf("%p free %zu bytes\n", p, prev_size);
     } else {
         printf("%p re-alloc %zu => %zu\n", p, prev_size, new_size);
     }
 #endif
-
     p = realloc(p, new_size);
-    if (new_size > 0 && p == NULL) {
+    if (p == NULL) {
         // TODO: panic! out of memory
         exit(1);
     }
