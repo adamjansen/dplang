@@ -198,14 +198,23 @@ struct token number(struct scanner *scanner)
             return binary_number(scanner);
         } else if (match(scanner, 'x') || match(scanner, 'X')) {
             return hexadecimal_number(scanner);
-        } else if (peek(scanner) != '.') {
-            return error_token(scanner, "Invalid numeric literal");
         }
     }
 
     while (isdigit(peek(scanner))) { advance(scanner); }
 
     if (match(scanner, '.')) {
+        if (isdigit(peek(scanner))) {
+            while (isdigit(peek(scanner))) { advance(scanner); }
+        } else {
+            return error_token(scanner, "Invalid numeric literal");
+        }
+    }
+
+    if (match(scanner, 'e')) {
+        if (peek(scanner) == '+' || peek(scanner) == '-') {
+            advance(scanner);
+        }
         if (isdigit(peek(scanner))) {
             while (isdigit(peek(scanner))) { advance(scanner); }
         } else {
