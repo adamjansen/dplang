@@ -53,10 +53,10 @@ enum opcode {
 };
 
 struct chunk {
+    int *lines;
+    uint8_t *code;
     int count;
     size_t capacity;
-    uint8_t *code;
-    int *lines;
     struct value_array constants;
 };
 

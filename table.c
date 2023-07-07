@@ -34,7 +34,9 @@ int table_init(struct table *table)
 
 void table_free(struct table *table)
 {
-    table->entries = (struct entry *)reallocate(table->entries, table->capacity, 0);
+    table->entries = (struct entry *)reallocate(table->entries, table->capacity * sizeof(struct entry), 0);
+    table->capacity = 0;
+    table->count = 0;
 }
 
 static struct entry *find_entry(struct entry *entries, int capacity, struct object_string *key)

@@ -8,4 +8,6 @@ void gc_collect();
 
 void gc_init(struct vm *vm);
 void gc_mark_object(struct object *object);
+void gc_mark_varray(struct value_array *varray);
+void gc_mark_value(value v);
 #endif

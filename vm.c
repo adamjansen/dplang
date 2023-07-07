@@ -12,6 +12,8 @@
 #include <stdio.h>
 #include <time.h>
 
+#define BYTECODE_MAGIC 0xDEADBEEF
+
 // #define DEBUG_TRACE_EXEC
 
 static inline double fshl(double a, double b)
@@ -231,6 +233,7 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
     uint32_t hash = hash_string(s, len);
     struct object_string *interned = table_find_string(&vm->strings, s, len, hash);
     if (interned != NULL) {
+        printf("found already interned string at %p\n", interned);
         return interned;
     }
     struct object_string *obj = object_string_take(s, len);
@@ -240,6 +243,7 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
 
 int vm_init(struct vm *vm)
 {
+    gc_init(vm);
     stack_reset(vm);
     vm->objects = NULL;
     table_init(&vm->strings);
@@ -248,10 +252,12 @@ int vm_init(struct vm *vm)
     vm->init_string = NULL;
     vm->init_string = object_string_allocate("init", 4);
 
+#if 0
     for (struct builtin_function_info *builtin = builtins; builtin->function != NULL; builtin++) {
         define_native(vm, builtin->name, builtin->function);
     }
 
+#endif
     return 0;
 }
 
@@ -461,8 +467,8 @@ bool vm_op_add(struct vm *vm)
         struct object_string *s1 = AS_STRING(stack_peek(vm, 1));
         size_t new_length = s2->length + s1->length;
         char *data = reallocate(NULL, 0, new_length + 1);
-        strncpy(data, s1->data, s1->length);
-        strncpy(&data[s1->length], s2->data, s2->length);
+        memcpy(data, s1->data, s1->length);
+        memcpy(&data[s1->length], s2->data, s2->length);
         data[new_length] = '\0';
         struct object_string *s3 = vm_intern_string(vm, data, new_length);
         stack_pop(vm);
@@ -742,28 +748,74 @@ int vm_run(struct vm *vm)
     return 0;
 }
 
+struct bytecode_header {
+    uint32_t magic;
+    uint8_t vm_ver_major;
+    uint8_t vm_ver_minor;
+    uint16_t header_size;
+    uint64_t timestamp;
+} __attribute__((packed));
+
 int vm_dump_bytecode(struct vm *vm, struct object_function *function)
 {
     (void)vm;
     FILE *f = fopen("bytecode.dpc", "wb");
+
+    struct bytecode_header header = {
+        .magic = BYTECODE_MAGIC,
+        .header_size = sizeof(struct bytecode_header),
+        .timestamp = time(NULL),
+        .vm_ver_major = 0,
+        .vm_ver_minor = 1,
+    };
+
+    fwrite(&header, 1, sizeof(header), f);
+
+    printf("Dumping %d bytes of byutecode\n", function->chunk.count);
+    fwrite(&function->chunk.count, 1, sizeof(function->chunk.count), f);
     fwrite(function->chunk.code, 1, function->chunk.count, f);
+
+    fwrite(&function->chunk.constants.count, 1, sizeof(function->chunk.constants.count), f);
+    printf("Dumping %d constants\n", function->chunk.constants.count);
     for (int i = 0; i < function->chunk.constants.count; i++) {
-        // TODO: dump constants
+        value v = function->chunk.constants.values[i];
+        uint8_t type = (uint8_t)v.type;
+        void *data = NULL;
+        size_t dsize = 0;
+        switch (v.type) {
+            case VAL_BOOL:
+                data = &v.as.boolean;
+                dsize = sizeof(v.as.boolean);
+                break;
+            case VAL_NIL:
+                data = &v.as.number;
+                dsize = sizeof(v.as.number);
+                break;
+            case VAL_NUMBER:
+                data = &v.as.number;
+                dsize = sizeof(v.as.number);
+                break;
+            case VAL_OBJECT:
+                break;
+        }
+        printf("Type %d, size %ld, data=%p\n", type, dsize, data);
+        fwrite(&type, 1, sizeof(type), f);
+        if (data != NULL) {
+            fwrite(data, 1, dsize, f);
+        }
     }
     fclose(f);
+    return 0;
 }
 
 int vm_interpret(struct vm *vm, const char *source)
 {
-    gc_init(vm);
     struct object_function *function = compile(source);
     if (function == NULL) {
         return -1;
     }
 
-    vm_dump_bytecode(vm, function);
-
-    gc_mark_object((struct object *)function);
+    // m_dump_bytecode(vm, function);
 
     stack_push(vm, OBJECT_VAL(function));
 

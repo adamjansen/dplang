@@ -3,11 +3,15 @@
 #include "scanner.h"
 #include "object.h"
 #include "parser.h"
+#include "memory.h"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+
+#define SCRIPT_NAME        "<script>"
+#define SCRIPT_NAME_LENGTH strlen(SCRIPT_NAME)
 
 #define BINARY_LITERAL_MAX_LENGTH 32
 
@@ -50,6 +54,8 @@ struct compiler {
     struct class_compiler *current_class;
 };
 
+static struct compiler *current = NULL;
+
 static void grouping(struct parser *parser, enum precedence precedence, void *userdata);
 static void binary(struct parser *parser, enum precedence precedence, void *userdata);
 static void unary(struct parser *parser, enum precedence precedence, void *userdata);
@@ -88,7 +94,6 @@ struct parse_rule rules[] = {
     [TOKEN_LESS] = {NULL,     binary, PREC_COMPARISON},
     [TOKEN_LESS_LESS] = {NULL,     binary, PREC_TERM      },
     [TOKEN_LESS_EQUAL] = {NULL,     binary, PREC_COMPARISON},
-    [TOKEN_CARET] = {NULL,     binary, PREC_TERM      },
     [TOKEN_IDENTIFIER] = {variable, NULL,   PREC_NONE      },
     [TOKEN_STRING] = {string,   NULL,   PREC_NONE      },
     [TOKEN_NUMBER] = {number,   NULL,   PREC_NONE      },
@@ -197,6 +202,7 @@ static void emit_return(struct compiler *compiler)
 
 static uint8_t make_constant(struct compiler *compiler, value value)
 {
+    gc_mark_value(value);
     int ret = chunk_add_constant(&compiler->function->chunk, value);
     if (ret > UINT8_MAX) {
         parser_error(compiler->parser, "Too many constants in one chunk");
@@ -210,18 +216,23 @@ static void compiler_init(struct compiler *compiler, struct parser *parser, enum
     compiler->function = NULL;
     compiler->type = type;
     compiler->parser = parser;
-    compiler->enclosing = NULL;
+    compiler->enclosing = current;
 
     compiler->nlocals = 0;
     compiler->scope_level = 0;
 
-    compiler->function = object_function_new();
-    memset(compiler->upvalues, 0x00, sizeof(compiler->upvalues));
+    current = compiler;
 
+    compiler->function = object_function_new(NULL);
+    struct object_string *fname;
     if (type != TYPE_SCRIPT) {
         compiler->function->name =
             object_string_allocate(compiler->parser->previous.start, compiler->parser->previous.length);
+    } else {
+        compiler->function->name = object_string_allocate(SCRIPT_NAME, SCRIPT_NAME_LENGTH);
     }
+    memset(compiler->upvalues, 0x00, sizeof(compiler->upvalues));
+
     struct local *local = &compiler->locals[compiler->nlocals++];
     local->level = 0;
     local->is_captured = false;
@@ -236,7 +247,8 @@ static void compiler_init(struct compiler *compiler, struct parser *parser, enum
 
 static uint8_t identifier_constant(struct compiler *compiler, struct token *name)
 {
-    return make_constant(compiler, OBJECT_VAL(object_string_allocate(name->start, name->length)));
+    struct object_string *s = object_string_allocate(name->start, name->length);
+    return make_constant(compiler, OBJECT_VAL(s));
 }
 
 static void add_local(struct compiler *compiler, struct token name)
@@ -404,7 +416,7 @@ static void function(struct compiler *compiler, enum function_type type)
 {
     struct compiler inner;
     compiler_init(&inner, compiler->parser, type);
-    inner.enclosing = compiler;
+    current = &inner;
     scope_enter(&inner);
 
     parser_consume(inner.parser, TOKEN_LEFT_PAREN, "Expect '(' after function name");
@@ -989,6 +1001,8 @@ static struct object_function *end(struct compiler *compiler)
     }
 #endif
 
+    current = current->enclosing;
+
     return func;
 }
 
@@ -1020,6 +1034,7 @@ struct object_function *compile(const char *source)
     parser_init(&parser, source);
 
     struct compiler compiler;
+
     compiler_init(&compiler, &parser, TYPE_SCRIPT);
 
     while (!parser_match(&parser, TOKEN_EOF)) { declaration(&compiler); }
@@ -1027,4 +1042,13 @@ struct object_function *compile(const char *source)
     struct object_function *func = end(&compiler);
 
     return parser.had_error ? NULL : func;
+}
+
+void compiler_gc_roots()
+{
+    struct compiler *compiler = current;
+    while (compiler != NULL) {
+        gc_mark_object(&compiler->function->object);
+        compiler = compiler->enclosing;
+    }
 }

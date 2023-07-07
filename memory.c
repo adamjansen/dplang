@@ -2,6 +2,7 @@
 #include "object.h"
 #include "value.h"
 #include "vm.h"
+#include "compiler.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -13,6 +14,7 @@
 #define GRAY_LIST_GROWTH_FACTOR 2
 
 // #define DEBUG_LOG_GC
+// #define DEBUG_STRESS_GC
 
 static bool enabled = false;
 static size_t total_allocated = 0;
@@ -72,7 +74,7 @@ void gc_mark_value(value value)
     }
 }
 
-static void gc_mark_array(struct value_array *array)
+void gc_mark_varray(struct value_array *array)
 {
     for (int i = 0; i < array->count; i++) { gc_mark_value(array->values[i]); }
 }
@@ -118,7 +120,7 @@ static void gc_blacken_object(struct object *object)
         case OBJECT_FUNCTION: {
             struct object_function *function = (struct object_function *)object;
             gc_mark_object((struct object *)function->name);
-            gc_mark_array(&function->chunk.constants);
+            gc_mark_varray(&function->chunk.constants);
             break;
         }
         case OBJECT_CLOSURE: {
@@ -154,6 +156,9 @@ static void gc_mark_roots(struct vm *vm)
     }
 
     gc_mark_table(&vm->globals);
+    gc_mark_table(&vm->strings);
+
+    compiler_gc_roots();
 
     gc_mark_object((struct object *)vm->init_string);
 }
@@ -213,9 +218,7 @@ void *reallocate(void *p, size_t prev_size, size_t new_size)
     }
 
 #ifdef DEBUG_LOG_GC
-    if (prev_size == 0) {
-        printf("allocating %zu bytes\n", new_size);
-    } else {
+    if (prev_size > 0) {
         printf("%p re-alloc %zu => %zu\n", p, prev_size, new_size);
     }
 #endif
@@ -224,6 +227,13 @@ void *reallocate(void *p, size_t prev_size, size_t new_size)
         // TODO: panic! out of memory
         exit(1);
     }
+
+#ifdef DEBUG_LOG_GC
+    if (prev_size == 0) {
+        printf("%p allocated %zu bytes\n", p, new_size);
+    }
+#endif
+
     return p;
 }
 

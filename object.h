@@ -22,9 +22,9 @@ enum object_type {
 };
 
 struct object {
+    struct object *next;
     enum object_type type;
     bool marked;
-    struct object *next;
 };
 
 struct object_class {
@@ -54,10 +54,10 @@ struct object_closure {
 
 struct object_function {
     struct object object;
+    struct object_string *name;
+    struct chunk chunk;
     int arity;
     int nupvalues;
-    struct chunk chunk;
-    struct object_string *name;
 };
 
 struct object_native {
@@ -67,9 +67,9 @@ struct object_native {
 
 struct object_string {
     struct object object;
-    size_t length;
     char *data;
     hash_t hash;
+    size_t length;
 };
 
 struct object_upvalue {
@@ -83,7 +83,7 @@ struct object_bound_method *object_bound_method_new(value receiver, struct objec
 struct object_class *object_class_new(struct object_string *name);
 struct object_closure *object_closure_new(struct object_function *function);
 struct object_instance *object_instance_new(struct object_class *klass);
-struct object_function *object_function_new();
+struct object_function *object_function_new(struct object_string *name);
 struct object_native *object_native_new(native_function function);
 struct object_upvalue *object_upvalue_new(value *slot);
 
@@ -118,5 +118,8 @@ void object_free(struct object *object);
 
 int object_print(struct object *obj);
 bool object_equal(struct object *a, struct object *b);
+
+void object_enable_gc(struct object *obj);
+void object_disable_gc(struct object *obj);
 
 #endif

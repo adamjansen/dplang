@@ -11,20 +11,19 @@
 int chunk_init(struct chunk *chunk)
 {
     chunk->count = 0;
-    chunk->capacity = MIN_CHUNK_SIZE;
-    chunk->code = reallocate(NULL, 0, MIN_CHUNK_SIZE * sizeof(chunk->code[0]));
-    chunk->lines = reallocate(NULL, 0, MIN_CHUNK_SIZE * sizeof(chunk->lines[0]));
+    chunk->code = reallocate(NULL, 0, MIN_CHUNK_SIZE * sizeof(uint8_t));
+    chunk->lines = reallocate(NULL, 0, MIN_CHUNK_SIZE * sizeof(int));
     value_array_init(&chunk->constants);
+    chunk->capacity = MIN_CHUNK_SIZE;
     return 0;
 }
 
 int chunk_free(struct chunk *chunk)
 {
-    chunk->code = reallocate(chunk->code, chunk->capacity, 0);
-    chunk->lines = reallocate(chunk->lines, chunk->capacity, 0);
+    chunk->code = reallocate(chunk->code, chunk->capacity * sizeof(uint8_t), 0);
+    chunk->lines = reallocate(chunk->lines, chunk->capacity * sizeof(int), 0);
     chunk->capacity = chunk->count = 0;
     value_array_free(&chunk->constants);
-    memset(chunk, 0x00, sizeof(*chunk));
     return 0;
 }
 
@@ -226,8 +225,8 @@ int chunk_write_bytes(struct chunk *chunk, uint8_t *bytes, size_t count, int lin
     if (chunk->capacity < chunk->count + count) {
         size_t prev_cap = chunk->capacity;
         chunk->capacity *= CHUNK_GROWTH_FACTOR;
-        chunk->code = reallocate(chunk->code, prev_cap, chunk->capacity * sizeof(chunk->code[0]));
-        chunk->lines = reallocate(chunk->lines, prev_cap, chunk->capacity * sizeof(chunk->lines[0]));
+        chunk->code = reallocate(chunk->code, prev_cap * sizeof(uint8_t), chunk->capacity * sizeof(uint8_t));
+        chunk->lines = reallocate(chunk->lines, prev_cap * sizeof(int), chunk->capacity * sizeof(int));
     }
 
     memcpy(&chunk->code[chunk->count], bytes, count);

@@ -1,2 +1,6 @@
 - intern strings
 - Use [uthash](https://troydhanson.github.io/uthash/) -- or some other hash library?
+- replace 'this' with 'self' in classes
+- support for arrays?
+- support for integers?
+- slicing and dicing binary data

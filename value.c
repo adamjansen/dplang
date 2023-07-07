@@ -3,36 +3,38 @@
 #include "object.h"
 #include <math.h>
 #include <stdint.h>
+#include <string.h>
 #include <stdio.h>
 
-#define MIN_VARRAY_SIZE      1
+#define MIN_VARRAY_SIZE      2
 #define VARRAY_GROWTH_FACTOR 2
 
 int value_array_init(struct value_array *varray)
 {
     varray->count = 0;
-    varray->capacity = MIN_VARRAY_SIZE;
-    varray->values = (value *)reallocate(NULL, 0, MIN_VARRAY_SIZE * sizeof(value));
+    varray->capacity = 0;
+    varray->values = NULL;
     return 0;
 }
 
 int value_array_write(struct value_array *varray, value val)
 {
     if (varray->capacity < varray->count + 1) {
-        size_t prev_cap = varray->capacity;
-        varray->capacity *= VARRAY_GROWTH_FACTOR;
+        int prev_cap = varray->capacity;
+        varray->capacity = (prev_cap < MIN_VARRAY_SIZE) ? MIN_VARRAY_SIZE : (VARRAY_GROWTH_FACTOR * prev_cap);
         varray->values =
             (value *)reallocate(varray->values, prev_cap * sizeof(value), varray->capacity * sizeof(value));
     }
 
-    varray->values[varray->count++] = val;
+    varray->values[varray->count] = val;
+    varray->count++;
 
     return 0;
 }
 
 int value_array_free(struct value_array *varray)
 {
-    varray->values = (value *)reallocate(varray->values, varray->capacity * sizeof(varray->values[0]), 0);
+    varray->values = (value *)reallocate(varray->values, varray->capacity * sizeof(value), 0);
     varray->capacity = varray->count = 0;
     return 0;
 }
