@@ -1,6 +1,14 @@
+- Runtime exception/error mechanism
 - intern strings
 - Use [uthash](https://troydhanson.github.io/uthash/) -- or some other hash library?
 - replace 'this' with 'self' in classes
 - support for arrays?
 - support for integers?
 - slicing and dicing binary data
+- Change // for comments to #
+- assert?
+- test suite
+- performance / benchmarking
+- build for ARMv6
+- while/for loop break/continue
+- string escapes (\xFF, \n, \r, etc)

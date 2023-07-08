@@ -51,13 +51,10 @@ static value stack_peek(struct vm *vm, int distance)
     return vm->sp[-1 - distance];
 }
 
-static void vm_runtime_error(struct vm *vm, const char *format, ...)
+static void vm_backtrace(struct vm *vm)
 {
-    va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
-    va_end(args);
-    fputs("\n", stderr);
+    struct object_string *msg = AS_STRING(stack_peek(vm, 0));
+    fprintf(stderr, "%s\n", msg->data);
 
     for (int i = vm->frame_count - 1; i >= 0; i--) {
         struct call_frame *frame = &vm->frames[i];
@@ -72,6 +69,15 @@ static void vm_runtime_error(struct vm *vm, const char *format, ...)
     }
 
     stack_reset(vm);
+}
+
+static void vm_runtime_error(struct vm *vm, const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    struct object_string *s = object_string_vformat(format, args);
+    va_end(args);
+    stack_push(vm, OBJECT_VAL(s));
 }
 
 static void define_native(struct vm *vm, const char *name, native_function function)
@@ -742,6 +748,10 @@ int vm_run(struct vm *vm)
         enum opcode inst = READ_OPCODE(vm);
         opcode_impl handler = opcode_handlers[inst];
         if (!handler(vm)) {
+            if (vm->sp == vm->stack) {
+                return 0;
+            }
+            vm_backtrace(vm);
             return -1;
         }
     }

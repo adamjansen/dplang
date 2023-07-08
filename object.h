@@ -5,6 +5,7 @@
 #include "value.h"
 #include "hash.h"
 #include "table.h"
+#include <stdarg.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -113,6 +114,8 @@ static inline bool is_object_type(value val, enum object_type type)
 
 struct object_string *object_string_allocate(const char *s, size_t length);
 struct object_string *object_string_take(const char *s, size_t length);
+struct object_string *object_string_format(const char *fmt, ...);
+struct object_string *object_string_vformat(const char *fmt, va_list ap);
 
 void object_free(struct object *object);
 

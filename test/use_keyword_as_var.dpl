@@ -1,0 +1,5 @@
+// [TEST] nil as variable name
+var nil = "value"; // expect: [line 2] error at 'nil': Expect variable name
+
+// [TEST] true as variable name
+var true = false; // expect: [line 5] error at 'true': Expect variable name

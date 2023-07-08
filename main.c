@@ -74,5 +74,5 @@ int main(int argc, char **argv)
     if (vm_free(&vm) != 0) {
         fprintf(stderr, "Could not shut down vm: %d", ret);
     }
-    return ret;
+    return ret ? EX_DATAERR : EX_OK;
 }

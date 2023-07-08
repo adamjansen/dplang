@@ -1,6 +1,7 @@
 #ifndef DPLANG_VM_H
 #define DPLANG_VM_H
 
+#include <stdarg.h>
 #include <stdbool.h>
 
 #include "object.h"

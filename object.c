@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include "object.h"
 #include "memory.h"
 
@@ -95,6 +96,32 @@ struct object_string *object_string_allocate(const char *s, size_t length)
     return object_string_take(data, length);
 }
 
+struct object_string *object_string_vformat(const char *fmt, va_list ap)
+{
+    va_list aq;
+    va_copy(aq, ap);
+    int count = vsnprintf(NULL, 0, fmt, ap);
+    if (count < 0) {
+        va_end(aq);
+        return NULL;
+    }
+    size_t length = count + 1;
+    char *s = (char *)reallocate(NULL, 0, length);
+    vsnprintf(s, length, fmt, aq);
+
+    struct object_string *obj = object_string_take(s, length);
+    va_end(aq);
+    return obj;
+}
+
+struct object_string *object_string_format(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    struct object_string *s = object_string_vformat(fmt, args);
+    va_end(args);
+    return s;
+}
 struct object_class *object_class_new(struct object_string *name)
 {
     struct object_class *klass = ALLOCATE_OBJECT(struct object_class, OBJECT_CLASS);
