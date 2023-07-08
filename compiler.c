@@ -897,14 +897,94 @@ static void literal(struct parser *parser, enum precedence precedence, void *use
     }
 }
 
+static inline uint8_t a2h(char c)
+{
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    c = (char)tolower(c);
+    if (c >= 'a' && c <= 'f') {
+        return 0xa + (c - 'a');  // NOLINT(readability-magic-numbers)
+    }
+    return 0;
+}
+
+static size_t string_escape(char *dst, const char *src, size_t escaped_length)
+{
+    size_t length = 0;
+
+    const char *s;
+    char *d;
+    for (s = src, d = dst; s < (src + escaped_length); s++) {
+        switch (*s) {
+            case '\\':
+                s++;
+                switch (*s) {
+                    case 'a':
+                        *d++ = '\a';  // Alert (bell)
+                        break;
+                    case 'b':
+                        *d++ = '\b';  // backspace
+                        break;
+                    case 'e':
+                        *d++ = '\e';  // Escape
+                        break;
+                    case 'f':
+                        *d++ = '\f';  // form feed
+                        break;
+                    case 'n':
+                        *d++ = '\n';  // new line
+                        break;
+                    case 'r':
+                        *d++ = '\r';  // carriage return
+                        break;
+                    case 't':
+                        *d++ = '\t';  // (horizontal) tab
+                        break;
+                    case 'v':
+                        *d++ = '\v';  // (vertical) tab
+                        break;
+                    case '\\':
+                        *d++ = '\\';  // backslash
+                        break;
+                    case '\'':
+                        *d++ = '\\';  // single quote
+                        break;
+                    case '"':
+                        *d++ = '"';  // double quote
+                        break;
+                    case 'x':
+                        *d++ = (char)((a2h(s[1]) << 4) + a2h(s[2]));
+                        s += 3;
+                        break;
+                    default:
+                        *d++ = '\\';
+                        break;
+                }
+                break;
+            default:
+                *d++ = *s;
+                break;
+        }
+    }
+
+    *d++ = '\0';
+
+    return (size_t)(d - dst);
+}
+
 static void string(struct parser *parser, enum precedence precedence, void *userdata)
 {
     (void)precedence;
     struct compiler *compiler = (struct compiler *)userdata;
 
     // TODO: Handle escape sequences
+    size_t escaped_length = parser->previous.length - 2;
+    char *unescaped = reallocate(NULL, 0, escaped_length);
 
-    struct object_string *s = object_string_allocate(parser->previous.start + 1, parser->previous.length - 2);
+    size_t unescaped_length = string_escape(unescaped, parser->previous.start + 1, escaped_length);
+
+    struct object_string *s = object_string_allocate(unescaped, unescaped_length);
     uint8_t constant = make_constant(compiler, OBJECT_VAL(s));
     emit_opcode_args(compiler, OP_CONSTANT, &constant, sizeof(constant));
 }
