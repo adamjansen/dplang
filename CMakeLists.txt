@@ -19,7 +19,7 @@ project(
 
 
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/CMakeModules)
-
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE INTERNAL "")
 include(CTest)
 include(ProcessorCount)
 

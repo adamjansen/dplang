@@ -1,8 +1,8 @@
 CompileFlags:
   Remove: [
   ]
-  Add:
-    [
+  Add: [
+      -xc,
       -std=c99,
-    ]
-
+  ]
+CompilationDatabase: build/

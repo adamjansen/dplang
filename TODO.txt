@@ -6,7 +6,7 @@
 - [ ] support for arrays?
 - [ ] support for integers?
 - [ ] slicing and dicing binary data
-- [ ] Change // for comments to #
+- [X] Add /* */ for block comments
 - [ ] assert?
 - [ ] test suite
 - [ ] performance / benchmarking

@@ -82,6 +82,13 @@ static struct token error_token(struct scanner *scanner, const char *format, ...
     return token;
 }
 
+/**
+ * Ignores all whitespace in input.
+ * Also keeps track of input line number.
+ *
+ * Treats comments as whitespace.  As a side-effect,
+ * they never make it to the compiler or into the bytecode.
+ */
 static void skip_whitespace(struct scanner *scanner)
 {
     while (1) {
@@ -97,8 +104,14 @@ static void skip_whitespace(struct scanner *scanner)
                 advance(scanner);
                 break;
             case '/':
-                if (peek_next(scanner) == '/') {
+                if (peek_next(scanner) == '/') { /* comment until end of line */
                     while (peek(scanner) != '\n' && !is_at_end(scanner)) { advance(scanner); }
+                } else if (peek_next(scanner) == '*') {  // comment until */ sequence
+                    while (!is_at_end(scanner) && !(peek(scanner) == '*' && peek_next(scanner) == '/')) {
+                        advance(scanner);
+                    }
+                    advance(scanner);
+                    advance(scanner);
                 } else {
                     return;
                 }
