@@ -183,8 +183,8 @@ static void patch_jump(struct compiler *compiler, int offset)
     }
 
     // NOLINTBEGIN(readability-magic-numbers)
-    compiler->function->chunk.code[offset] = (size >> 8) & 0xFF;
-    compiler->function->chunk.code[offset + 1] = size & 0xFF;
+    compiler->function->chunk.code[offset] = size & 0xFF;
+    compiler->function->chunk.code[offset + 1] = (size >> 8) & 0xFF;
     // NOLINTEND(readability-magic-numbers)
 }
 

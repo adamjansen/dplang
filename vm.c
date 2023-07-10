@@ -283,7 +283,7 @@ int vm_free(struct vm *vm)
 
 #define READ_U8(vm)       ((uint8_t) * (vm)->frame->ip++)
 #define READ_CONSTANT(vm) ((vm)->frame->closure->function->chunk.constants.values[READ_U8(vm)])
-#define READ_U16(vm)      ((vm)->frame->ip += 2, (uint16_t)(((vm)->frame->ip[-2] << 8) | (vm)->frame->ip[-1]))
+#define READ_U16(vm)      ((vm)->frame->ip += 2, (uint16_t)(((vm)->frame->ip[-1] << 8) | (vm)->frame->ip[-2]))
 #define READ_OPCODE(vm)   ((enum opcode)READ_U8(vm))
 #define READ_STRING(vm)   AS_STRING(READ_CONSTANT(vm))
 
@@ -781,12 +781,10 @@ int vm_dump_bytecode(struct vm *vm, struct object_function *function)
 
     fwrite(&header, 1, sizeof(header), f);
 
-    printf("Dumping %d bytes of byutecode\n", function->chunk.count);
     fwrite(&function->chunk.count, 1, sizeof(function->chunk.count), f);
     fwrite(function->chunk.code, 1, function->chunk.count, f);
 
     fwrite(&function->chunk.constants.count, 1, sizeof(function->chunk.constants.count), f);
-    printf("Dumping %d constants\n", function->chunk.constants.count);
     for (int i = 0; i < function->chunk.constants.count; i++) {
         value v = function->chunk.constants.values[i];
         uint8_t type = (uint8_t)v.type;
@@ -808,7 +806,6 @@ int vm_dump_bytecode(struct vm *vm, struct object_function *function)
             case VAL_OBJECT:
                 break;
         }
-        printf("Type %d, size %ld, data=%p\n", type, dsize, data);
         fwrite(&type, 1, sizeof(type), f);
         if (data != NULL) {
             fwrite(data, 1, dsize, f);
@@ -825,7 +822,7 @@ int vm_interpret(struct vm *vm, const char *source)
         return -1;
     }
 
-    // m_dump_bytecode(vm, function);
+    vm_dump_bytecode(vm, function);
 
     stack_push(vm, OBJECT_VAL(function));
 
