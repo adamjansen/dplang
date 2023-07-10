@@ -5,7 +5,6 @@
 #include "parser.h"
 #include "memory.h"
 #include <ctype.h>
-#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -42,6 +41,12 @@ struct class_compiler {
     bool has_superclass;
 };
 
+struct block {
+    int loop_top;
+    int loop_bottom;
+    struct block *previous;
+};
+
 struct compiler {
     struct object_function *function;
     enum function_type type;
@@ -52,6 +57,7 @@ struct compiler {
     int scope_level;
     struct compiler *enclosing;
     struct class_compiler *current_class;
+    struct block *block;
 };
 
 static struct compiler *current = NULL;
@@ -161,6 +167,7 @@ static inline void emit_loop(struct compiler *compiler, int loop_start)
     uint16_t offset = compiler->function->chunk.count - loop_start + 3;
     if (offset > UINT16_MAX) {
         parser_error(compiler->parser, "Loop body too large");
+        return;
     }
 
     emit_opcode_args(compiler, OP_LOOP, &offset, sizeof(offset));
@@ -168,7 +175,7 @@ static inline void emit_loop(struct compiler *compiler, int loop_start)
 
 static inline int emit_jump(struct compiler *compiler, enum opcode jmp)
 {
-    uint16_t dummy = 0;
+    uint16_t dummy = 0xFFFF;
     emit_opcode_args(compiler, jmp, &dummy, sizeof(dummy));
     return (int)compiler->function->chunk.count - 2;  // offset of to-be-patched jump destination
 }
@@ -220,6 +227,8 @@ static void compiler_init(struct compiler *compiler, struct parser *parser, enum
 
     compiler->nlocals = 0;
     compiler->scope_level = 0;
+
+    compiler->block = NULL;
 
     current = compiler;
 
@@ -540,6 +549,17 @@ static void expression_statement(struct compiler *compiler)
     emit_opcode(compiler, OP_POP);
 }
 
+static void continue_statement(struct compiler *compiler)
+{
+    parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after continue");
+    if (compiler->block == NULL) {
+        parser_error(compiler->parser, "Continue cannot be used outside of a loop");
+        return;
+    }
+
+    emit_loop(compiler, compiler->block->loop_top);
+}
+
 // NOLINTNEXTLINE(misc-no-recursion)
 static void for_statement(struct compiler *compiler)
 {
@@ -634,7 +654,11 @@ static void return_statement(struct compiler *compiler)
 // NOLINTNEXTLINE(misc-no-recursion)
 static void while_statement(struct compiler *compiler)
 {
+    struct block block;
+    block.previous = compiler->block;
+    compiler->block = &block;
     int loop_start = compiler->function->chunk.count;
+    block.loop_top = loop_start;
     parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'while'");
     expression(compiler);
     parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition");
@@ -647,6 +671,8 @@ static void while_statement(struct compiler *compiler)
 
     patch_jump(compiler, exit_jump);
     emit_opcode(compiler, OP_POP);
+
+    compiler->block = block.previous;
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
@@ -680,6 +706,8 @@ static void statement(struct compiler *compiler)
         return_statement(compiler);
     } else if (parser_match(compiler->parser, TOKEN_WHILE)) {
         while_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_CONTINUE)) {
+        continue_statement(compiler);
     } else if (parser_match(compiler->parser, TOKEN_LEFT_BRACE)) {
         scope_enter(compiler);
         block(compiler);

@@ -42,6 +42,8 @@ enum token_type {
     TOKEN_ELSE,
     TOKEN_FALSE,
     TOKEN_FOR,
+    TOKEN_BREAK,
+    TOKEN_CONTINUE,
     TOKEN_FUNC,
     TOKEN_IF,
     TOKEN_NIL,

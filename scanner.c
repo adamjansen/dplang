@@ -131,13 +131,24 @@ static enum token_type check_keyword(struct scanner *scanner, int start, int len
     return TOKEN_IDENTIFIER;
 }
 
+// NOLINTBEGIN(readability-magic-numbers)
 static enum token_type identifier_type(struct scanner *scanner)
 {
     switch (scanner->start[0]) {
         case 'a':
             return check_keyword(scanner, 1, 2, "nd", TOKEN_AND);
+        case 'b':
+            return check_keyword(scanner, 1, 4, "reak", TOKEN_BREAK);
         case 'c':
-            return check_keyword(scanner, 1, 4, "lass", TOKEN_CLASS);
+            if (scanner->current - scanner->start > 1) {
+                switch (scanner->start[1]) {
+                    case 'o':
+                        return check_keyword(scanner, 2, 6, "ntinue", TOKEN_CONTINUE);
+                        break;
+                    case 'l':
+                        return check_keyword(scanner, 2, 3, "ass", TOKEN_CLASS);
+                }
+            }
         case 'e':
             return check_keyword(scanner, 1, 3, "lse", TOKEN_ELSE);
         case 'f':
@@ -161,7 +172,7 @@ static enum token_type identifier_type(struct scanner *scanner)
         case 'p':
             return check_keyword(scanner, 1, 4, "rint", TOKEN_PRINT);
         case 'r':
-            return check_keyword(scanner, 1, 5, "eturn", TOKEN_RETURN);  // NOLINT(readability-magic-numbers)
+            return check_keyword(scanner, 1, 5, "eturn", TOKEN_RETURN);
         case 's':
             return check_keyword(scanner, 1, 4, "uper", TOKEN_SUPER);
         case 't':
@@ -181,6 +192,7 @@ static enum token_type identifier_type(struct scanner *scanner)
     }
     return TOKEN_IDENTIFIER;
 }
+// NOLINTEND(readability-magic-numbers)END
 
 struct token identifier(struct scanner *scanner)
 {

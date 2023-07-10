@@ -164,7 +164,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
                 int is_local = chunk->code[offset++];
                 int index = chunk->code[offset++];
 
-                printf("%04d      |                     %s %d\n", offset - 2, is_local ? "local" : "upvalue", index);
+                printf("%04ld      |                     %s %d\n", offset - 2, is_local ? "local" : "upvalue", index);
             }
             return offset;
         }
@@ -205,7 +205,7 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
 int chunk_disassemble(struct chunk *chunk, const char *name)
 {
     int count = 0;
-    printf("=== %s === [%lu bytes]\n", name, chunk->count);
+    printf("=== %s === [%d bytes]\n", name, chunk->count);
     for (size_t offset = 0; offset < chunk->count;) {
         offset = disassemble_instruction(chunk, offset);
         count++;
