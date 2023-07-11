@@ -51,8 +51,25 @@ static value stack_peek(struct vm *vm, int distance)
     return vm->sp[-1 - distance];
 }
 
+static void vm_dump_stack(struct vm *vm)
+{
+    printf("              <STACK> {%d items}", vm->sp - vm->stack);
+    for (value *slot = vm->stack; slot < vm->sp; slot++) {
+        printf("[ ");
+        value_print(*slot);
+        printf(" ]");
+    }
+    printf("\n");
+}
+
 static void vm_backtrace(struct vm *vm)
 {
+    printf("========= BACKTRACE ===========\n");
+    vm_dump_stack(vm);
+    if (!IS_STRING(stack_peek(vm, 0))) {
+        fprintf(stderr, "Expected error message on stack, but none found\n");
+        return;
+    }
     struct object_string *msg = AS_STRING(stack_peek(vm, 0));
     fprintf(stderr, "%s\n", msg->data);
 
@@ -734,13 +751,7 @@ int vm_run(struct vm *vm)
 
     while (1) {
 #ifdef DEBUG_TRACE_EXEC
-        printf("            ");
-        for (value *slot = vm->stack; slot < vm->sp; slot++) {
-            printf("[ ");
-            value_print(*slot);
-            printf(" ]");
-        }
-        printf("\n");
+        vm_dump_stack(vm);
         disassemble_instruction(&vm->frame->closure->function->chunk,
                                 (int)(vm->frame->ip - vm->frame->closure->function->chunk.code));
 

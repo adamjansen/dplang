@@ -1,0 +1,10 @@
+// [TEST] Continue in for loop
+for (var x = 1; x < 4; x = x + 1) {
+    if (x == 2) {
+        continue;
+    }
+    print x;
+}
+
+// expect: 1
+// expect: 3

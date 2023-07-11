@@ -1,9 +1,11 @@
+// [TEST] Continue in while loop
 var x = 0;
 while (x < 10) {
   x = x+1;
   if (x == 1) {
-    print "skipping x==1";
     continue;
-    }
-    print x;
+  }
+  print x;
 }
+
+// expect: 1

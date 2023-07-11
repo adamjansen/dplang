@@ -9,6 +9,30 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+// #define DEBUG_BYTECODE
+
+#define U16LSB(w) (((uint16_t)(w)) & 0xff)
+#define U16MSB(w) ((((uint16_t)(w)) >> 8) & 0xff)
+
+static void *memmem(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len)
+{
+    if (needle_len == 0) {
+        return (void *)haystack;
+    }
+
+    if (haystack_len < needle_len) {
+        return NULL;
+    }
+
+    const uint8_t *const end = (const uint8_t *)haystack + haystack_len - needle_len;
+    for (const uint8_t *begin = (const uint8_t *)haystack; begin <= end; begin++) {
+        if (!memcmp((const void *)begin, (const void *)needle, needle_len)) {
+            return (void *)begin;
+        }
+    }
+    return NULL;
+}
+
 #define SCRIPT_NAME        "<script>"
 #define SCRIPT_NAME_LENGTH strlen(SCRIPT_NAME)
 
@@ -16,7 +40,15 @@
 
 #define ARG_MAX UINT8_MAX
 
-// #define DEBUG_BYTECODE
+#define DUMMY_JUMP_TARGET 0xFFFF
+
+#define _PLACEHOLDER_JUMP_INST(op)                                 \
+    {                                                              \
+        (op), U16LSB(DUMMY_JUMP_TARGET), U16MSB(DUMMY_JUMP_TARGET) \
+    }
+
+#define PLACEHOLDER_JUMP_INST          _PLACEHOLDER_JUMP_INST(OP_JUMP)
+#define PLACEHOLDER_JUMP_IF_FALSE_INST _PLACEHOLDER_JUMP_INST(OP_JUMP_IF_FALSE)
 
 struct local {
     struct token name;
@@ -44,6 +76,7 @@ struct class_compiler {
 struct block {
     int loop_top;
     int loop_bottom;
+    int loop_scope_level;
     struct block *previous;
 };
 
@@ -135,6 +168,8 @@ static void statement(struct compiler *compiler);
 static void expression_statement(struct compiler *compiler);
 static void if_statement(struct compiler *compiler);
 static void while_statement(struct compiler *compiler);
+static void continue_statement(struct compiler *compiler);
+static void break_statement(struct compiler *compiler);
 static void for_statement(struct compiler *compiler);
 static void var_declaration(struct compiler *compiler);
 
@@ -175,8 +210,8 @@ static inline void emit_loop(struct compiler *compiler, int loop_start)
 
 static inline int emit_jump(struct compiler *compiler, enum opcode jmp)
 {
-    uint16_t dummy = 0xFFFF;
-    emit_opcode_args(compiler, jmp, &dummy, sizeof(dummy));
+    uint16_t target = DUMMY_JUMP_TARGET;
+    emit_opcode_args(compiler, jmp, &target, sizeof(target));
     return (int)compiler->function->chunk.count - 2;  // offset of to-be-patched jump destination
 }
 
@@ -189,10 +224,8 @@ static void patch_jump(struct compiler *compiler, int offset)
         parser_error(compiler->parser, "Too much code for jump");
     }
 
-    // NOLINTBEGIN(readability-magic-numbers)
-    compiler->function->chunk.code[offset] = size & 0xFF;
-    compiler->function->chunk.code[offset + 1] = (size >> 8) & 0xFF;
-    // NOLINTEND(readability-magic-numbers)
+    compiler->function->chunk.code[offset] = U16LSB(size);
+    compiler->function->chunk.code[offset + 1] = U16MSB(size);
 }
 
 static void emit_return(struct compiler *compiler)
@@ -556,53 +589,108 @@ static void continue_statement(struct compiler *compiler)
         parser_error(compiler->parser, "Continue cannot be used outside of a loop");
         return;
     }
+    // Discard loop's locals
+    for (int i = compiler->nlocals - 1; i >= 0 && compiler->locals[i].level > compiler->block->loop_scope_level; i--) {
+        emit_opcode(compiler, OP_POP);
+    }
 
     emit_loop(compiler, compiler->block->loop_top);
+}
+
+static void break_statement(struct compiler *compiler)
+{
+    parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after break");
+    if (compiler->block == NULL) {
+        parser_error(compiler->parser, "Break cannot be used outside of a loop");
+        return;
+    }
+
+    emit_jump(compiler, OP_JUMP);
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
 static void for_statement(struct compiler *compiler)
 {
     scope_enter(compiler);
+    struct block block = {
+        .previous = compiler->block,
+        .loop_scope_level = compiler->scope_level,
+        .loop_top = -1,
+        .loop_bottom = -1,
+    };
+
+    compiler->block = &block;
+
+    /* Initializer */
     parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'for'");
-    if (parser_match(compiler->parser, TOKEN_SEMICOLON)) {
-        // no initializer
-    } else if (parser_match(compiler->parser, TOKEN_VAR)) {
+    if (parser_match(compiler->parser, TOKEN_VAR)) {
         var_declaration(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_SEMICOLON)) {
+        // no initializer
     } else {
         expression_statement(compiler);
     }
 
-    int loop_start = compiler->function->chunk.count;
-    int exit_jump = -1;
+    block.loop_top = compiler->function->chunk.count;
 
+    /* Condition */
     if (!parser_match(compiler->parser, TOKEN_SEMICOLON)) {
         expression(compiler);
         parser_consume(compiler->parser, TOKEN_SEMICOLON, "Expect ';' after loop condition");
-        exit_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
-        emit_opcode(compiler, OP_POP);
+        block.loop_bottom = emit_jump(compiler, OP_JUMP_IF_FALSE);
+        emit_opcode(compiler, OP_POP);  // don't leave the condition on the stack
     }
 
+    /* Increment */
     if (!parser_match(compiler->parser, TOKEN_RIGHT_PAREN)) {
         int body_jump = emit_jump(compiler, OP_JUMP);
         int increment_start = compiler->function->chunk.count;
         expression(compiler);
-        emit_opcode(compiler, OP_POP);
         parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after for clauses");
-        emit_loop(compiler, loop_start);
-        loop_start = increment_start;
+        emit_opcode(compiler, OP_POP);
+        emit_loop(compiler, block.loop_top);
+        block.loop_top = increment_start;
         patch_jump(compiler, body_jump);
     }
 
     statement(compiler);
-    emit_loop(compiler, loop_start);
 
-    if (exit_jump != -1) {
-        patch_jump(compiler, exit_jump);
-        emit_opcode(compiler, OP_POP);
+    emit_loop(compiler, block.loop_top);
+
+    block.loop_bottom = compiler->function->chunk.count;
+
+    uint8_t jmpz[] = PLACEHOLDER_JUMP_IF_FALSE_INST;
+    uint8_t i = 0;
+    while (i < (compiler->function->chunk.count - sizeof(jmpz))) {
+        uint8_t *p = (uint8_t *)memmem(&compiler->function->chunk.code[i], compiler->function->chunk.count - i, jmpz,
+                                       sizeof(jmpz));
+        if (p == NULL) {
+            break;
+        }
+        int jump_distance = block.loop_bottom - (int)(p - compiler->function->chunk.code) - i - 3;
+        p[1] = U16LSB(jump_distance);
+        p[2] = U16MSB(jump_distance);
+        i += (p - compiler->function->chunk.code);
     }
 
+    uint8_t jmp[] = PLACEHOLDER_JUMP_INST;
+    uint8_t j = 0;
+    while (j < (compiler->function->chunk.count - sizeof(jmp))) {
+        uint8_t *p = (uint8_t *)memmem(&compiler->function->chunk.code[j], compiler->function->chunk.count - j, jmp,
+                                       sizeof(jmp));
+        if (p == NULL) {
+            break;
+        }
+        int jump_distance = block.loop_bottom - (int)(p - compiler->function->chunk.code) - j;
+        p[1] = U16LSB(jump_distance);
+        p[2] = U16MSB(jump_distance);
+        j += (p - compiler->function->chunk.code);
+    }
+
+    compiler->block = block.previous;
+
     scope_exit(compiler);
+    emit_opcode(compiler, OP_POP);
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
@@ -654,25 +742,65 @@ static void return_statement(struct compiler *compiler)
 // NOLINTNEXTLINE(misc-no-recursion)
 static void while_statement(struct compiler *compiler)
 {
-    struct block block;
-    block.previous = compiler->block;
+    struct block block = {
+        .previous = compiler->block,
+        .loop_scope_level = compiler->scope_level,
+        .loop_top = compiler->function->chunk.count,
+        .loop_bottom = -1,
+    };
+
     compiler->block = &block;
-    int loop_start = compiler->function->chunk.count;
-    block.loop_top = loop_start;
+
+    scope_enter(compiler);
+
     parser_consume(compiler->parser, TOKEN_LEFT_PAREN, "Expect '(' after 'while'");
     expression(compiler);
     parser_consume(compiler->parser, TOKEN_RIGHT_PAREN, "Expect ')' after condition");
 
-    int exit_jump = emit_jump(compiler, OP_JUMP_IF_FALSE);
+    // test the condition
+    emit_jump(compiler, OP_JUMP_IF_FALSE);
+    // Condition is true; pop it and resume body
     emit_opcode(compiler, OP_POP);
+
+    // loop body
     statement(compiler);
 
-    emit_loop(compiler, loop_start);
+    // jump back to the top of the loop
+    emit_loop(compiler, block.loop_top);
 
-    patch_jump(compiler, exit_jump);
+    block.loop_bottom = compiler->function->chunk.count;
     emit_opcode(compiler, OP_POP);
 
+    uint8_t jmpz[] = PLACEHOLDER_JUMP_IF_FALSE_INST;
+    uint8_t i = 0;
+    while (i < (compiler->function->chunk.count - sizeof(jmpz))) {
+        uint8_t *p = (uint8_t *)memmem(&compiler->function->chunk.code[i], compiler->function->chunk.count - i, jmpz,
+                                       sizeof(jmpz));
+        if (p == NULL) {
+            break;
+        }
+        int jump_distance = block.loop_bottom - (int)(p - compiler->function->chunk.code) - i - 3;
+        p[1] = U16LSB(jump_distance);
+        p[2] = U16MSB(jump_distance);
+        i += (p - compiler->function->chunk.code);
+    }
+
+    uint8_t jmp[] = PLACEHOLDER_JUMP_INST;
+    uint8_t j = 0;
+    while (j < (compiler->function->chunk.count - sizeof(jmp))) {
+        uint8_t *p = (uint8_t *)memmem(&compiler->function->chunk.code[j], compiler->function->chunk.count - j, jmp,
+                                       sizeof(jmp));
+        if (p == NULL) {
+            break;
+        }
+        int jump_distance = block.loop_bottom - (int)(p - compiler->function->chunk.code) - j - 3 + 1;
+        p[1] = U16LSB(jump_distance);
+        p[2] = U16MSB(jump_distance);
+        j += (p - compiler->function->chunk.code);
+    }
+
     compiler->block = block.previous;
+    scope_exit(compiler);
 }
 
 // NOLINTNEXTLINE(misc-no-recursion)
@@ -706,6 +834,8 @@ static void statement(struct compiler *compiler)
         return_statement(compiler);
     } else if (parser_match(compiler->parser, TOKEN_WHILE)) {
         while_statement(compiler);
+    } else if (parser_match(compiler->parser, TOKEN_BREAK)) {
+        break_statement(compiler);
     } else if (parser_match(compiler->parser, TOKEN_CONTINUE)) {
         continue_statement(compiler);
     } else if (parser_match(compiler->parser, TOKEN_LEFT_BRACE)) {

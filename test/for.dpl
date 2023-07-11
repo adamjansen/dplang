@@ -1,0 +1,8 @@
+// [TEST] Simple for loop
+for (var x = 1; x < 4; x = x + 1) {
+    print x;
+}
+
+// expect: 1
+// expect: 2
+// expect: 3

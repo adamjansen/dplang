@@ -1,0 +1,9 @@
+// [TEST] Break from for loop
+for (var x = 1; x < 4; x = x + 1) {
+    if (x == 2) {
+        break;
+    }
+    print x;
+}
+
+// expect: 1

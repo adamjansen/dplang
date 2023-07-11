@@ -53,7 +53,8 @@ static size_t jump_instruction(const char *name, struct chunk *chunk, size_t off
 {
     uint16_t target = (uint16_t)(chunk->code[offset + 1]);  // NOLINT(readability-magic-numbers)
     target |= chunk->code[offset + 2] << 8;
-    printf("%-16s %4ld -> %d %c%hd\n", name, offset, (int)(offset + 3) + sign * target, sign ? '+' : '-', target);
+    printf("%-16s %4ld -> %d %c%hd\n", name, offset, (int)(offset + 3) + sign * target, (sign >= 0) ? '+' : '-',
+           target);
     // 16-bit jump destination, plus implicit pop of condition
     return offset + 3;
 }

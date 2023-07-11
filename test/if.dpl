@@ -1,6 +1,7 @@
+var one = 1;
 var x = 1;
-if (x == 1) {
-print "it's 1";
+if (x >= one) {
+print "it's 1 or more";
 } else {
 print "it's not 1";
 }

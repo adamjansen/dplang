@@ -11,5 +11,5 @@
 - [ ] test suite
 - [ ] performance / benchmarking
 - [ ] build for ARMv6
-- [ ] while/for loop break/continue
+- [X] while/for loop break/continue
 - [X] string escapes (\xFF, \n, \r, etc)
