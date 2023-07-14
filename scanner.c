@@ -289,6 +289,10 @@ struct token scanner_scan_token(struct scanner *scanner)
             return make_token(scanner, TOKEN_LEFT_BRACE);
         case '}':
             return make_token(scanner, TOKEN_RIGHT_BRACE);
+        case '[':
+            return make_token(scanner, TOKEN_LEFT_BRACKET);
+        case ']':
+            return make_token(scanner, TOKEN_RIGHT_BRACKET);
         case ';':
             return make_token(scanner, TOKEN_SEMICOLON);
         case ',':

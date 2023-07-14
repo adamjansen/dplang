@@ -36,6 +36,8 @@ enum opcode {
     OP_SET_LOCAL,
     OP_GET_UPVALUE,
     OP_SET_UPVALUE,
+    OP_TABLE_GET,
+    OP_TABLE_SET,
     OP_JUMP_IF_FALSE,
     OP_JUMP_IF_TRUE,
     OP_JUMP,

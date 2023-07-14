@@ -7,6 +7,7 @@ enum value_type {
     VAL_NIL,
     VAL_NUMBER,
     VAL_OBJECT,
+    VAL_EMPTY,
 };
 
 struct _value {
@@ -25,6 +26,7 @@ typedef struct _value value;
 #define IS_NIL(v)     IS_TYPE(v, VAL_NIL)
 #define IS_NUMBER(v)  IS_TYPE(v, VAL_NUMBER)
 #define IS_OBJECT(v)  IS_TYPE(v, VAL_OBJECT)
+#define IS_EMPTY(v)   IS_TYPE(v, VAL_EMPTY)
 
 #define AS_BOOL(v)   ((v).as.boolean)
 #define AS_NUMBER(v) ((v).as.number)
@@ -34,6 +36,7 @@ typedef struct _value value;
 #define NIL_VAL       ((value){.type = VAL_NIL, .as = {.number = 0}})
 #define NUMBER_VAL(v) ((value){.type = VAL_NUMBER, .as = {.number = v}})
 #define OBJECT_VAL(v) ((value){.type = VAL_OBJECT, .as = {.object = (struct object *)v}})
+#define EMPTY_VAL     ((value){.type = VAL_EMPTY, .as = {.number = 0}})
 
 struct value_array {
     int capacity;

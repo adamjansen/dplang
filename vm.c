@@ -102,7 +102,7 @@ static void define_native(struct vm *vm, const char *name, native_function funct
     struct object_string *s = object_string_allocate(name, strlen(name));
     stack_push(vm, OBJECT_VAL(s));
     stack_push(vm, OBJECT_VAL(object_native_new(function)));
-    table_set(&vm->globals, AS_STRING(vm->stack[0]), vm->stack[1]);
+    table_set(&vm->globals, vm->stack[0], vm->stack[1]);
     stack_pop(vm);
     stack_pop(vm);
 }
@@ -139,7 +139,7 @@ static bool call_value(struct vm *vm, value callee, int arg_count)
                 struct object_class *klass = AS_CLASS(callee);
                 vm->sp[-arg_count - 1] = OBJECT_VAL(object_instance_new(klass));
                 value initializer;
-                if (table_get(&klass->methods, vm->init_string, &initializer)) {
+                if (table_get(&klass->methods, OBJECT_VAL(vm->init_string), &initializer)) {
                     return call(vm, AS_CLOSURE(initializer), arg_count);
                 } else if (arg_count != 0) {
                     vm_runtime_error(vm, "Expected 0 arguments, but got %d", arg_count);
@@ -168,7 +168,7 @@ static bool call_value(struct vm *vm, value callee, int arg_count)
 static bool invoke_from_class(struct vm *vm, struct object_class *klass, struct object_string *name, int arg_count)
 {
     value method;
-    if (!table_get(&klass->methods, name, &method)) {
+    if (!table_get(&klass->methods, OBJECT_VAL(name), &method)) {
         vm_runtime_error(vm, "Undefined property '%s'", name->data);
         return false;
     }
@@ -186,8 +186,9 @@ static bool invoke(struct vm *vm, struct object_string *name, int arg_count)
 
     struct object_instance *instance = AS_INSTANCE(receiver);
 
+    value k = OBJECT_VAL(name);
     value value;
-    if (table_get(&instance->fields, name, &value)) {
+    if (table_get(&instance->fields, k, &value)) {
         vm->sp[-arg_count - 1] = value;
         return call_value(vm, value, arg_count);
     }
@@ -198,7 +199,7 @@ static bool invoke(struct vm *vm, struct object_string *name, int arg_count)
 static bool bind_method(struct vm *vm, struct object_class *klass, struct object_string *name)
 {
     value method;
-    if (!table_get(&klass->methods, name, &method)) {
+    if (!table_get(&klass->methods, OBJECT_VAL(name), &method)) {
         vm_runtime_error(vm, "Undefined property '%s'", name->data);
         return false;
     }
@@ -247,7 +248,8 @@ static void define_method(struct vm *vm, struct object_string *name)
 {
     value method = stack_peek(vm, 0);
     struct object_class *klass = AS_CLASS(stack_peek(vm, 1));
-    table_set(&klass->methods, name, method);
+    value k = OBJECT_VAL(name);
+    table_set(&klass->methods, k, method);
     stack_pop(vm);
 }
 
@@ -260,7 +262,8 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
         return interned;
     }
     struct object_string *obj = object_string_take(s, len);
-    table_set(&vm->strings, obj, NIL_VAL);
+    value k = OBJECT_VAL(obj);
+    table_set(&vm->strings, k, NIL_VAL);
     return obj;
 }
 
@@ -275,12 +278,10 @@ int vm_init(struct vm *vm)
     vm->init_string = NULL;
     vm->init_string = object_string_allocate("init", 4);
 
-#if 0
     for (struct builtin_function_info *builtin = builtins; builtin->function != NULL; builtin++) {
         define_native(vm, builtin->name, builtin->function);
     }
 
-#endif
     return 0;
 }
 
@@ -373,8 +374,9 @@ bool vm_op_set_local(struct vm *vm)
 bool vm_op_get_global(struct vm *vm)
 {
     struct object_string *name = READ_STRING(vm);
+    value key = OBJECT_VAL(name);
     value value;
-    if (!table_get(&vm->globals, name, &value)) {
+    if (!table_get(&vm->globals, key, &value)) {
         vm_runtime_error(vm, "Undefined variable '%s'", name->data);
         return false;
     }
@@ -385,19 +387,63 @@ bool vm_op_get_global(struct vm *vm)
 bool vm_op_define_global(struct vm *vm)
 {
     struct object_string *name = READ_STRING(vm);
-    table_set(&vm->globals, name, stack_peek(vm, 0));
+    value key = OBJECT_VAL(name);
+    table_set(&vm->globals, key, stack_peek(vm, 0));
     stack_pop(vm);
     return true;
 }
 
 bool vm_op_set_global(struct vm *vm)
 {
-    struct object_string *name = READ_STRING(vm);
-    if (table_set(&vm->globals, name, stack_peek(vm, 0))) {
-        table_delete(&vm->globals, name);
-        vm_runtime_error(vm, "Undefined variable '%s'", name->data);
+    value key = stack_peek(vm, 1);
+    if (table_set(&vm->globals, key, stack_peek(vm, 0))) {
+        table_delete(&vm->globals, key);
+        vm_runtime_error(vm, "Undefined variable '%s'", AS_STRING(key)->data);
         return false;
     }
+    return true;
+}
+
+bool vm_op_table_get(struct vm *vm)
+{
+    value t = stack_peek(vm, 1);
+    if (!IS_TABLE(t)) {
+        vm_runtime_error(vm, "Can't index non-table");
+        return false;
+    }
+    value v = NIL_VAL;
+    bool exists = table_get(&AS_TABLE(t), stack_peek(vm, 0), &v);
+    stack_pop(vm);
+    stack_pop(vm);
+    stack_push(vm, v);
+
+    if (!exists) {
+        vm_runtime_error(vm, "No such key in table");
+    }
+
+    return exists;
+}
+
+bool vm_op_table_set(struct vm *vm)
+{
+    value t = stack_peek(vm, 2);
+    if (!IS_TABLE(t)) {
+        vm_runtime_error(vm, "Can't index non-table");
+        return false;
+    }
+
+    value k = stack_peek(vm, 1);
+    value v = stack_peek(vm, 0);
+    if (IS_NIL(v)) {
+        table_delete(&AS_TABLE(t), k);
+    } else {
+        table_set(&AS_TABLE(t), k, v);
+    }
+    stack_pop(vm);
+    stack_pop(vm);
+    stack_pop(vm);
+    stack_push(vm, v);
+
     return true;
 }
 
@@ -434,8 +480,9 @@ bool vm_op_get_property(struct vm *vm)
     }
     struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 0));
     struct object_string *name = READ_STRING(vm);
+    value key = OBJECT_VAL(name);
     value value;
-    if (table_get(&instance->fields, name, &value)) {
+    if (table_get(&instance->fields, key, &value)) {
         stack_pop(vm);  // instance
         stack_push(vm, value);
         return true;
@@ -453,7 +500,8 @@ bool vm_op_set_property(struct vm *vm)
         return false;
     }
     struct object_instance *instance = AS_INSTANCE(stack_peek(vm, 1));
-    table_set(&instance->fields, READ_STRING(vm), stack_peek(vm, 0));
+    struct object_string *name = READ_STRING(vm);
+    table_set(&instance->fields, OBJECT_VAL(name), stack_peek(vm, 0));
     value value = stack_pop(vm);
     stack_pop(vm);
     stack_push(vm, value);
@@ -740,6 +788,8 @@ static opcode_impl opcode_handlers[UINT8_MAX + 1] = {
     [OP_INVOKE] = vm_op_invoke,
     [OP_SUPER_INVOKE] = vm_op_super_invoke,
     [OP_INHERIT] = vm_op_inherit,
+    [OP_TABLE_GET] = vm_op_table_get,
+    [OP_TABLE_SET] = vm_op_table_set,
 };
 
 int vm_run(struct vm *vm)
@@ -758,6 +808,10 @@ int vm_run(struct vm *vm)
 #endif
         enum opcode inst = READ_OPCODE(vm);
         opcode_impl handler = opcode_handlers[inst];
+        if (handler == NULL) {
+            fprintf(stderr, "Invalid opcode");
+            return -1;
+        }
         if (!handler(vm)) {
             if (vm->sp == vm->stack) {
                 return 0;

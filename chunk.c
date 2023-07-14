@@ -111,6 +111,8 @@ static const char *opnames[] = {
     [OP_INHERIT] = "OP_INHERIT",
     [OP_GET_SUPER] = "OP_GET_SUPER",
     [OP_SUPER_INVOKE] = "OP_SUPER_INVOKE",
+    [OP_TABLE_GET] = "OP_TABLE_GET",
+    [OP_TABLE_SET] = "OP_TABLE_SET",
 };
 
 static const char *opcode_to_string(enum opcode op)
@@ -195,6 +197,8 @@ size_t disassemble_instruction(struct chunk *chunk, size_t offset)
         case OP_POP:
         case OP_CLOSE_UPVALUE:
         case OP_INHERIT:
+        case OP_TABLE_GET:
+        case OP_TABLE_SET:
             return simple_instruction(opname, offset);
 
         default:

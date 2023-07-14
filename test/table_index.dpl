@@ -1,0 +1,12 @@
+var t = table();
+// [TEST] table number key
+t[0] = 1234;
+print t[0]; // expect: 1234
+
+// [TEST] table string key
+t["abc"] = 4321;
+print t["abc"]; // expect: 4321
+
+// [TEST] table delete key
+t[0] = nil;
+print t[0]; // expect: Error....

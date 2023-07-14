@@ -8,6 +8,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 // #define DEBUG_BYTECODE
 
@@ -108,12 +109,15 @@ static void call(struct parser *parser, enum precedence precedence, void *userda
 static void dot(struct parser *parser, enum precedence precedence, void *userdata);
 static void this_(struct parser *parser, enum precedence precedence, void *userdata);
 static void super_(struct parser *parser, enum precedence precedence, void *userdata);
+static void index_(struct parser *parser, enum precedence precedence, void *userdata);
 
 struct parse_rule rules[] = {
     [TOKEN_LEFT_PAREN] = {grouping, call,   PREC_CALL      },
     [TOKEN_RIGHT_PAREN] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_LEFT_BRACE] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_RIGHT_BRACE] = {NULL,     NULL,   PREC_NONE      },
+    [TOKEN_LEFT_BRACKET] = {NULL,     index_, PREC_CALL      },
+    [TOKEN_RIGHT_BRACKET] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_COMMA] = {NULL,     NULL,   PREC_NONE      },
     [TOKEN_DOT] = {NULL,     dot,    PREC_CALL      },
     [TOKEN_MINUS] = {unary,    binary, PREC_TERM      },
@@ -881,6 +885,26 @@ static void named_variable(struct compiler *compiler, struct token name, bool as
         emit_opcode_args(compiler, op_set, &arg, sizeof(arg));
     } else {
         emit_opcode_args(compiler, op_get, &arg, sizeof(arg));
+    }
+}
+
+static void index_(struct parser *parser, enum precedence precedence, void *userdata)
+{
+    (void)precedence;
+    struct compiler *compiler = (struct compiler *)userdata;
+    if (parser_check(compiler->parser, TOKEN_RIGHT_BRACKET)) {
+        parser_error(parser, "Exression required");
+    }
+    expression(compiler);
+    parser_consume(parser, TOKEN_RIGHT_BRACKET, "Expect ']' after index");
+
+    bool assign_ok = precedence <= PREC_ASSIGNMENT;
+
+    if (assign_ok && parser_match(parser, TOKEN_EQUAL)) {
+        expression(compiler);
+        emit_opcode(compiler, OP_TABLE_SET);
+    } else {
+        emit_opcode(compiler, OP_TABLE_GET);
     }
 }
 

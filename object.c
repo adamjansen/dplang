@@ -27,6 +27,8 @@ static inline const char *object_type_name(enum object_type type)
             return "NATIVE";
         case OBJECT_STRING:
             return "STRING";
+        case OBJECT_TABLE:
+            return "TABLE";
         case OBJECT_UPVALUE:
             return "UPVALUE";
         default:
@@ -140,6 +142,14 @@ struct object_bound_method *object_bound_method_new(value receiver, struct objec
     return bound;
 }
 
+struct object_table *object_table_new()
+{
+    struct object_table *table = ALLOCATE_OBJECT(struct object_table, OBJECT_TABLE);
+    table_init(&table->table);
+    object_enable_gc((struct object *)table);
+    return table;
+}
+
 struct object_upvalue *object_upvalue_new(value *slot)
 {
     struct object_upvalue *upvalue = ALLOCATE_OBJECT(struct object_upvalue, OBJECT_UPVALUE);
@@ -236,6 +246,10 @@ int object_print(struct object *obj)
         }
         case OBJECT_NATIVE: {
             printf("<native fn>");
+            break;
+        }
+        case OBJECT_TABLE: {
+            printf("table");
             break;
         }
         default:

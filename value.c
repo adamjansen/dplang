@@ -60,6 +60,9 @@ int value_print(value val)
         case VAL_OBJECT:
             object_print(AS_OBJECT(val));
             break;
+        case VAL_EMPTY:
+            printf("<empty");
+            break;
         default:
             printf("unrecognized type: %d\n", val.type);
     }
@@ -80,7 +83,9 @@ bool value_equal(value a, value b)
         case VAL_NUMBER:
             return AS_NUMBER(a) == AS_NUMBER(b);
         case VAL_OBJECT:
-            return AS_OBJECT(a) == AS_OBJECT(b);
+            return object_equal(AS_OBJECT(a), AS_OBJECT(b));
+        case VAL_EMPTY:
+            return true;
         default:
             return false;
     }

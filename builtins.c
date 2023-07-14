@@ -61,6 +61,12 @@ static value native_sum(int argc, value *args)
     return NUMBER_VAL(sum);
 }
 
+static value native_table(int argc, value *args)
+{
+    struct object_table *t = object_table_new();
+    return OBJECT_VAL(t);
+}
+
 struct builtin_function_info builtins[] = {
     {"abs",   native_abs  },
     {"clock", native_clock},
@@ -69,5 +75,6 @@ struct builtin_function_info builtins[] = {
     {"round", native_round},
     {"sqrt",  native_sqrt },
     {"sum",   native_sum  },
+    {"table", native_table},
     {NULL,    NULL        },
 };

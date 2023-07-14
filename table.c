@@ -39,13 +39,13 @@ void table_free(struct table *table)
     table->count = 0;
 }
 
-static struct entry *find_entry(struct entry *entries, int capacity, struct object_string *key)
+static struct entry *find_entry(struct entry *entries, int capacity, value key)
 {
-    uint32_t index = key->hash & (capacity - 1);
+    uint32_t index = hash_value(key) & (capacity - 1);
     struct entry *tombstone = NULL;
     while (1) {
         struct entry *entry = &entries[index];
-        if (entry->key == NULL) {
+        if (IS_EMPTY(entry->key)) {
             if (IS_NIL(entry->value)) {
                 return tombstone != NULL ? tombstone : entry;
             } else {
@@ -53,13 +53,10 @@ static struct entry *find_entry(struct entry *entries, int capacity, struct obje
                     tombstone = entry;
                 }
             }
-        } else if (entry->key == key) {
-            return entry;
-        } else if (entry->key->length == key->length && entry->key->hash == key->hash &&
-                   memcmp(entry->key->data, key->data, key->length) == 0) {
+        } else if (value_equal(key, entry->key)) {
             return entry;
         }
-        index = (index + 1) % (capacity - 1);
+        index = (index + 1) & (capacity - 1);
     }
 }
 
@@ -68,14 +65,14 @@ static void adjust_capacity(struct table *table)
     int capacity = table_next_size(table);
     struct entry *entries = (struct entry *)reallocate(NULL, 0, sizeof(struct entry) * capacity);
     for (int i = 0; i < capacity; i++) {
-        entries[i].key = NULL;
+        entries[i].key = EMPTY_VAL;
         entries[i].value = NIL_VAL;
     }
 
     table->count = 0;
     for (int i = 0; i < table->capacity; i++) {
         struct entry *entry = &table->entries[i];
-        if (entry->key == NULL) {
+        if (IS_EMPTY(entry->key)) {
             continue;
         }
 
@@ -96,13 +93,14 @@ void table_add_all(struct table *from, struct table *to)
 {
     for (int i = 0; i < from->capacity; i++) {
         struct entry *entry = &from->entries[i];
-        if (entry->key != NULL) {
+        if (!IS_EMPTY(entry->key)) {
             table_set(to, entry->key, entry->value);
         }
     }
 }
 // NOLINTEND(bugprone-easily-swappable-parameters)
 
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
 struct object_string *table_find_string(struct table *table, const char *chars, size_t length, hash_t hash)
 {
     if (table->count == 0) {
@@ -113,45 +111,46 @@ struct object_string *table_find_string(struct table *table, const char *chars, 
 
     while (1) {
         struct entry *entry = &table->entries[index];
-        if (entry->key == NULL) {
-            if (IS_NIL(entry->value)) {
-                // stop on empty non-tombstone entry
-                return NULL;
-            }
-        } else if (entry->key->length == length && entry->key->hash == hash &&
-                   memcmp(entry->key->data, chars, length) == 0) {
-            return entry->key;
+        if (IS_EMPTY(entry->key)) {
+            return NULL;
+        }
+        struct object_string *string = AS_STRING(entry->key);
+        if (string->length == length && memcmp(string->data, chars, length) == 0) {
+            return string;
         }
 
         index = (index + 1) & (table->capacity - 1);
     }
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
-bool table_set(struct table *table, struct object_string *key, value value)
+// NOLINTBEGIN(bugprone-easily-swappable-parameters)
+bool table_set(struct table *table, value key, value value)
 {
     int load = table_load(table);
     if (load > TABLE_MAX_LOAD) {
         adjust_capacity(table);
     }
     struct entry *entry = find_entry(table->entries, table->capacity, key);
-    bool is_new_key = entry->key == NULL;
-    if (is_new_key && IS_NIL(entry->value)) {
-        table->count++;
-    }
+    bool is_new_key = IS_EMPTY(entry->key);
 
     entry->key = key;
     entry->value = value;
+    if (is_new_key) {
+        table->count++;
+    }
     return is_new_key;
 }
+// NOLINTEND(bugprone-easily-swappable-parameters)
 
-bool table_get(struct table *table, struct object_string *key, value *value)
+bool table_get(struct table *table, value key, value *value)
 {
     if (table->count == 0) {
         return false;
     }
 
     struct entry *entry = find_entry(table->entries, table->capacity, key);
-    if (entry->key == NULL) {
+    if (IS_EMPTY(entry->key)) {
         return false;
     }
 
@@ -159,18 +158,18 @@ bool table_get(struct table *table, struct object_string *key, value *value)
     return true;
 }
 
-bool table_delete(struct table *table, struct object_string *key)
+bool table_delete(struct table *table, value key)
 {
     if (table->count == 0) {
         return false;
     }
     struct entry *entry = find_entry(table->entries, table->capacity, key);
-    if (entry->key == NULL) {
+    if (IS_EMPTY(entry->key)) {
         return false;
     }
 
     // Tombstone sentinel value
-    entry->key = NULL;
+    entry->key = EMPTY_VAL;
     entry->value = BOOL_VAL(true);
     return true;
 }
@@ -179,8 +178,9 @@ void table_dump(struct table *table)
 {
     for (int i = 0; i < table->capacity; i++) {
         struct entry *entry = &table->entries[i];
-        if (entry->key != NULL) {
-            printf("%s=", entry->key->data);
+        if (!IS_EMPTY(entry->key)) {
+            value_print(entry->key);
+            printf("=");
             value_print(entry->value);
             printf("\n");
         }

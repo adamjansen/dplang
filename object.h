@@ -19,6 +19,7 @@ enum object_type {
     OBJECT_INSTANCE,
     OBJECT_NATIVE,
     OBJECT_STRING,
+    OBJECT_TABLE,
     OBJECT_UPVALUE,
 };
 
@@ -73,6 +74,11 @@ struct object_string {
     size_t length;
 };
 
+struct object_table {
+    struct object object;
+    struct table table;
+};
+
 struct object_upvalue {
     struct object object;
     value *location;
@@ -86,6 +92,7 @@ struct object_closure *object_closure_new(struct object_function *function);
 struct object_instance *object_instance_new(struct object_class *klass);
 struct object_function *object_function_new(struct object_string *name);
 struct object_native *object_native_new(native_function function);
+struct object_table *object_table_new();
 struct object_upvalue *object_upvalue_new(value *slot);
 
 #define OBJECT_TYPE(value) (AS_OBJECT(value)->type)
@@ -102,6 +109,8 @@ static inline bool is_object_type(value val, enum object_type type)
 #define IS_INSTANCE(val)     is_object_type(val, OBJECT_INSTANCE)
 #define IS_NATIVE(val)       is_object_type(val, OBJECT_NATIVE)
 #define IS_STRING(val)       is_object_type(val, OBJECT_STRING)
+#define IS_TABLE(val)        is_object_type(val, OBJECT_TABLE)
+#define IS_UPVALUE(val)      is_object_type(val, OBJECT_UPVALUE)
 
 #define AS_BOUND_METHOD(val) ((struct object_bound_method *)AS_OBJECT(val))
 #define AS_CLASS(val)        ((struct object_class *)AS_OBJECT(val))
@@ -111,6 +120,7 @@ static inline bool is_object_type(value val, enum object_type type)
 #define AS_CSTRING(val)      (((struct object_string *)AS_OBJECT(val))->data)
 #define AS_NATIVE(val)       (((struct object_native *)AS_OBJECT(val))->function)
 #define AS_STRING(val)       ((struct object_string *)AS_OBJECT(val))
+#define AS_TABLE(val)        (((struct object_table *)AS_OBJECT(val))->table)
 
 struct object_string *object_string_allocate(const char *s, size_t length);
 struct object_string *object_string_take(const char *s, size_t length);

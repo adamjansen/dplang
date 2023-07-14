@@ -6,7 +6,7 @@
 #include "hash.h"
 
 struct entry {
-    struct object_string *key;
+    value key;
     value value;
 };
 
@@ -17,10 +17,10 @@ struct table {
 };
 
 int table_init(struct table *table);
-bool table_set(struct table *table, struct object_string *key, value value);
-bool table_get(struct table *table, struct object_string *key, value *value);
+bool table_set(struct table *table, value key, value value);
+bool table_get(struct table *table, value key, value *value);
 void table_free(struct table *table);
-bool table_delete(struct table *table, struct object_string *key);
+bool table_delete(struct table *table, value key);
 void table_add_all(struct table *from, struct table *to);
 struct object_string *table_find_string(struct table *table, const char *chars, size_t length, hash_t hash);
 void table_dump(struct table *table);

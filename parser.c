@@ -94,6 +94,11 @@ void parser_precedence(struct parser *parser, enum precedence precedence, void *
     while (precedence <= parser_get_rule(parser->current.type)->precedence) {
         parser_advance(parser);
         parse_function infix_rule = parser_get_rule(parser->previous.type)->infix;
+        if (infix_rule == NULL) {
+            printf("token_type=%d\n", parser->previous.type);
+            parser_error(parser, "Invalid infix rule?");
+            return;
+        }
         infix_rule(parser, precedence, userdata);
     }
 

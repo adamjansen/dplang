@@ -83,7 +83,7 @@ void gc_mark_table(struct table *table)
 {
     for (int i = 0; i < table->capacity; i++) {
         struct entry *entry = &table->entries[i];
-        gc_mark_object((struct object *)entry->key);
+        gc_mark_value(entry->key);
         gc_mark_value(entry->value);
     }
 }
@@ -139,7 +139,7 @@ void gc_table_remove_white(struct table *table)
 {
     for (int i = 0; i < table->capacity; i++) {
         struct entry *entry = &table->entries[i];
-        if (entry->key != NULL && !entry->key->object.marked) {
+        if (!IS_EMPTY(entry->key) && IS_OBJECT(entry->key) && !AS_OBJECT(entry->key)->marked) {
             table_delete(table, entry->key);
         }
     }
