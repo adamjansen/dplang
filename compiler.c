@@ -4,6 +4,8 @@
 #include "object.h"
 #include "parser.h"
 #include "memory.h"
+#include "util.h"
+
 #include <ctype.h>
 #include <string.h>
 #include <stdbool.h>
@@ -11,9 +13,6 @@
 #include <stdio.h>
 
 // #define DEBUG_BYTECODE
-
-#define U16LSB(w) (((uint16_t)(w)) & 0xff)
-#define U16MSB(w) ((((uint16_t)(w)) >> 8) & 0xff)
 
 static void *memmem(const void *haystack, size_t haystack_len, const void *needle, size_t needle_len)
 {
@@ -203,13 +202,15 @@ static inline void emit_byte(struct compiler *compiler, uint8_t b)
 
 static inline void emit_loop(struct compiler *compiler, int loop_start)
 {
-    uint16_t offset = compiler->function->chunk.count - loop_start + 3;
+    int offset = compiler->function->chunk.count - loop_start + 3;
     if (offset > UINT16_MAX) {
         parser_error(compiler->parser, "Loop body too large");
         return;
     }
 
-    emit_opcode_args(compiler, OP_LOOP, &offset, sizeof(offset));
+    uint16_t u16_offset;
+
+    emit_opcode_args(compiler, OP_LOOP, &u16_offset, sizeof(u16_offset));
 }
 
 static inline int emit_jump(struct compiler *compiler, enum opcode jmp)
@@ -623,6 +624,12 @@ static void for_statement(struct compiler *compiler)
         .loop_bottom = -1,
     };
 
+    /* due to recursive parsing, we can get away with
+     * keeping a pointer to a stack variable. Once we
+     * leave this scope, we won't have a reference to it
+     * any more.  If it causes problems, we will need
+     * to allocate from the heap.
+     */
     compiler->block = &block;
 
     /* Initializer */
@@ -753,6 +760,7 @@ static void while_statement(struct compiler *compiler)
         .loop_bottom = -1,
     };
 
+    // Keeping stack pointer is ok due to how this field is used.
     compiler->block = &block;
 
     scope_enter(compiler);

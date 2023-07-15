@@ -17,7 +17,7 @@ void parser_error_at(struct parser *parser, struct token *token, const char *mes
         fprintf(stderr, " at end");
     } else if (token->type == TOKEN_ERROR) {
     } else {
-        fprintf(stderr, " at '%.*s'", token->length, token->start);
+        fprintf(stderr, " at '%.*s'", (int)token->length, token->start);
     }
 
     fprintf(stderr, ": %s\n", message);

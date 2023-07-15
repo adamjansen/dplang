@@ -32,6 +32,7 @@ void gc_init(struct vm *vm)
 {
     gray_capacity = GRAY_LIST_MIN_SIZE;
     gray_count = 0;
+    // TODO: Handle realloc failure
     gray_stack = (struct object **)realloc(gray_stack, sizeof(struct object *) * gray_capacity);
     gc_vm = vm;
     // total_allocated = 0;
@@ -127,6 +128,11 @@ static void gc_blacken_object(struct object *object)
             struct object_closure *closure = (struct object_closure *)object;
             gc_mark_object((struct object *)closure->function);
             for (int i = 0; i < closure->nupvalues; i++) { gc_mark_object((struct object *)closure->upvalues[i]); }
+            break;
+        }
+        case OBJECT_TABLE: {
+            struct object_table *table = (struct object_table *)object;
+            gc_mark_table(&table->table);
             break;
         }
         case OBJECT_NATIVE:

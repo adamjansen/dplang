@@ -32,6 +32,7 @@ hash_t hash_double(double d)
     return cast.ints[0] + cast.ints[1];
 }
 
+// NOLINTBEGIN(readability-magic-numbers)
 hash_t hash_value(value v)
 {
     switch (v.type) {
@@ -45,5 +46,8 @@ hash_t hash_value(value v)
             return AS_STRING(v)->hash;
         case VAL_EMPTY:
             return 0;
+        default:
+            return -1U;
     }
 }
+// NOLINTEND(readability-magic-numbers)

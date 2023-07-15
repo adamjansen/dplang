@@ -325,6 +325,12 @@ void object_free(struct object *obj)
             reallocate(str, sizeof(*str), 0);
             break;
         }
+        case OBJECT_TABLE: {
+            struct object_table *table = (struct object_table *)obj;
+            table_free(&table->table);
+            reallocate(table, sizeof(*table), 0);
+            break;
+        }
         case OBJECT_UPVALUE: {
             struct object_upvalue *upvalue = (struct object_upvalue *)obj;
             reallocate(obj, sizeof(*upvalue), 0);

@@ -63,6 +63,8 @@ static value native_sum(int argc, value *args)
 
 static value native_table(int argc, value *args)
 {
+    (void)argc;
+    (void)args;
     struct object_table *t = object_table_new();
     return OBJECT_VAL(t);
 }

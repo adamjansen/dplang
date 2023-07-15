@@ -13,3 +13,5 @@
 - [ ] build for ARMv6
 - [X] while/for loop break/continue
 - [X] string escapes (\xFF, \n, \r, etc)
+- [X] User tables
+      should non-existent keys in a table return nil, or cause a runtime error?
