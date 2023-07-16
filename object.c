@@ -10,6 +10,7 @@ extern struct object *gc_objects;
 
 #define ALLOCATE_OBJECT(type, id) (type *)object_allocate(sizeof(type), id)
 
+#ifdef DEBUG_LOG_GC
 static inline const char *object_type_name(enum object_type type)
 {
     switch (type) {
@@ -35,6 +36,7 @@ static inline const char *object_type_name(enum object_type type)
             return "INVALID";
     };
 }
+#endif
 
 void object_enable_gc(struct object *obj)
 {
@@ -216,12 +218,12 @@ int object_print(struct object *obj)
         }
         case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)obj;
-            printf("%s", klass->name->data);
+            printf("class %s", klass->name->data);
             break;
         }
         case OBJECT_INSTANCE: {
             struct object_instance *instance = (struct object_instance *)obj;
-            printf("%s instance", instance->klass->name->data);
+            printf("%s instance %p", instance->klass->name->data, (void *)instance);
             break;
         }
         case OBJECT_STRING: {
@@ -240,16 +242,15 @@ int object_print(struct object *obj)
             break;
         }
         case OBJECT_UPVALUE: {
-            struct object_upvalue *upvalue = (struct object_upvalue *)obj;
-            printf("upvalue");
+            printf("upvalue %p", (void *)obj);
             break;
         }
         case OBJECT_NATIVE: {
-            printf("<native fn>");
+            printf("<native fn> %p", (void *)obj);
             break;
         }
         case OBJECT_TABLE: {
-            printf("table");
+            printf("table %p", (void *)obj);
             break;
         }
         default:

@@ -33,8 +33,8 @@ configure_file(dplang.h.in dplang.h)
 
 add_subdirectory(external)
 
-option(CODE_COVERAGE "Measure code coverage" ON)
-option(BUILD_TESTS "Build the test suite" ON)
+option(CODE_COVERAGE "Measure code coverage" OFF)
+option(BUILD_TESTS "Build the test suite" OFF)
 
 if (BUILD_TESTS)
   enable_testing()
@@ -69,6 +69,9 @@ endif()
 
 find_program(CLANG_TIDY_EXE NAMES "clang-tidy" REQUIRED)
 set(CLANG_TIDY_COMMAND "${CLANG_TIDY_EXE}" "-checks=-*,bugprone-*,portability-*,readability-*,-readability-identifier-length,performance-*,misc-*,clang-analyzer-*,-clang-analyzer-security*,-readability-else-after-return,-bugprone-branch-clone")
+
+set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic")
+set(CMAKE_C_FLAGS_RELEASE "-O3")
 
 
 add_executable(dplang chunk.c compiler.c main.c memory.c scanner.c value.c vm.c object.c table.c hash.c parser.c builtins.c)

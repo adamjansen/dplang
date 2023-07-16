@@ -208,7 +208,7 @@ static inline void emit_loop(struct compiler *compiler, int loop_start)
         return;
     }
 
-    uint16_t u16_offset;
+    uint16_t u16_offset = (uint16_t)offset;
 
     emit_opcode_args(compiler, OP_LOOP, &u16_offset, sizeof(u16_offset));
 }
@@ -271,7 +271,6 @@ static void compiler_init(struct compiler *compiler, struct parser *parser, enum
     current = compiler;
 
     compiler->function = object_function_new(NULL);
-    struct object_string *fname;
     if (type != TYPE_SCRIPT) {
         compiler->function->name =
             object_string_allocate(compiler->parser->previous.start, compiler->parser->previous.length);
@@ -1101,8 +1100,6 @@ static inline uint8_t a2h(char c)
 
 static size_t string_escape(char *dst, const char *src, size_t escaped_length)
 {
-    size_t length = 0;
-
     const char *s;
     char *d;
     for (s = src, d = dst; s < (src + escaped_length); s++) {
@@ -1117,7 +1114,7 @@ static size_t string_escape(char *dst, const char *src, size_t escaped_length)
                         *d++ = '\b';  // backspace
                         break;
                     case 'e':
-                        *d++ = '\e';  // Escape
+                        *d++ = '\x1b';  // Escape (\e works, but is non-standard)
                         break;
                     case 'f':
                         *d++ = '\f';  // form feed

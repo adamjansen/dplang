@@ -149,6 +149,7 @@ static enum token_type identifier_type(struct scanner *scanner)
                         return check_keyword(scanner, 2, 3, "ass", TOKEN_CLASS);
                 }
             }
+            break;
         case 'e':
             return check_keyword(scanner, 1, 3, "lse", TOKEN_ELSE);
         case 'f':

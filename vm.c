@@ -53,7 +53,7 @@ static value stack_peek(struct vm *vm, int distance)
 
 static void vm_dump_stack(struct vm *vm)
 {
-    printf("              <STACK> {%d items}", vm->sp - vm->stack);
+    printf("              <STACK> {%ld items}", vm->sp - vm->stack);
     for (value *slot = vm->stack; slot < vm->sp; slot++) {
         printf("[ ");
         value_print(*slot);
@@ -258,7 +258,7 @@ struct object_string *vm_intern_string(struct vm *vm, const char *s, size_t len)
     uint32_t hash = hash_string(s, len);
     struct object_string *interned = table_find_string(&vm->strings, s, len, hash);
     if (interned != NULL) {
-        printf("found already interned string at %p\n", interned);
+        printf("found already interned string at %p\n", (void *)interned);
         return interned;
     }
     struct object_string *obj = object_string_take(s, len);
@@ -395,7 +395,8 @@ bool vm_op_define_global(struct vm *vm)
 
 bool vm_op_set_global(struct vm *vm)
 {
-    value key = stack_peek(vm, 1);
+    struct object_string *name = READ_STRING(vm);
+    value key = OBJECT_VAL(name);
     if (table_set(&vm->globals, key, stack_peek(vm, 0))) {
         table_delete(&vm->globals, key);
         vm_runtime_error(vm, "Undefined variable '%s'", AS_STRING(key)->data);
@@ -869,6 +870,8 @@ int vm_dump_bytecode(struct vm *vm, struct object_function *function)
                 dsize = sizeof(v.as.number);
                 break;
             case VAL_OBJECT:
+                break;
+            case VAL_EMPTY:
                 break;
         }
         fwrite(&type, 1, sizeof(type), f);

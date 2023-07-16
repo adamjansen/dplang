@@ -211,7 +211,7 @@ int chunk_disassemble(struct chunk *chunk, const char *name)
 {
     int count = 0;
     printf("=== %s === [%d bytes]\n", name, chunk->count);
-    for (size_t offset = 0; offset < chunk->count;) {
+    for (size_t offset = 0; offset < (size_t)chunk->count;) {
         offset = disassemble_instruction(chunk, offset);
         count++;
     }

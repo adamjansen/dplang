@@ -13,7 +13,7 @@
 hash_t hash_string(const char *s, size_t length)
 {
     hash_t hash = FNV_OFFSET_BASIS;
-    for (int i = 0; i < length; i++) {
+    for (int i = 0; i < (int)length; i++) {
         hash ^= (uint8_t)s[i];
         hash *= FNV_PRIME;
     }
