@@ -70,8 +70,8 @@ static struct token error_token(struct scanner *scanner, const char *format, ...
     va_list args;
     va_start(args, format);
     int len = vsnprintf(NULL, 0, format, args);
-    char *message = malloc(len);
-    vsnprintf(message, len, format, args);
+    char *message = malloc(len + 1);
+    vsnprintf(message, len + 1, format, args);
     va_end(args);
     struct token token = {
         .type = TOKEN_ERROR,
