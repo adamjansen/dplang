@@ -169,7 +169,7 @@ static void gc_mark_roots(struct vm *vm)
     gc_mark_object((struct object *)vm->init_string);
 }
 
-static void gc_trace_references()
+static void gc_trace_references(void)
 {
     while (gray_count > 0) {
         struct object *object = gray_stack[--gray_count];
@@ -177,7 +177,7 @@ static void gc_trace_references()
     }
 }
 
-static void gc_sweep()
+static void gc_sweep(void)
 {
     struct object *previous = NULL;
     struct object *object = gc_objects;
@@ -243,7 +243,7 @@ void *reallocate(void *p, size_t prev_size, size_t new_size)
     return p;
 }
 
-void gc_collect()
+void gc_collect(void)
 {
     if (!enabled) {
 #ifdef DEBUG_LOG_GC

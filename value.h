@@ -1,6 +1,7 @@
 #ifndef DPLANG_VALUE_H
 #define DPLANG_VALUE_H
 #include <stdbool.h>
+#include <stddef.h>
 
 enum value_type {
     VAL_BOOL,
@@ -49,6 +50,7 @@ int value_array_write(struct value_array *varray, value val);
 int value_array_free(struct value_array *varray);
 
 int value_print(value val);
+int value_format(char *s, size_t maxlen, value val);
 
 bool value_equal(value a, value b);
 #endif

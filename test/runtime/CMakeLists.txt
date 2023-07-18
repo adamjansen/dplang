@@ -4,6 +4,7 @@ add_executable(runtime_utest
 
 target_link_libraries(runtime_utest
     Unity
+    dplanglib
 )
 
-add_test(dplang runtime_utest)
+add_test(runtime runtime_utest)

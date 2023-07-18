@@ -1,10 +1,10 @@
 add_executable(hash_utest
     test_hash.c
-    ../../hash.c
 )
 
 target_link_libraries(hash_utest
+    dplanglib
     Unity
 )
 
-add_test(dplang hash_utest)
+add_test(hash hash_utest)

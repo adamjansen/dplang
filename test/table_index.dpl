@@ -9,4 +9,7 @@ print t["abc"]; // expect: 4321
 
 // [TEST] table delete key
 t[0] = nil;
-print t[0]; // expect: Error....
+print t[0]; // expect: ========= BACKTRACE ===========
+// expect:               <STACK> {3 items}[ <fn <script>> ][ nil ][ No such key in table ]
+// expect: No such key in table
+// expect: [line 1] in <script>()

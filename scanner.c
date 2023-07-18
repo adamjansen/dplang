@@ -205,7 +205,7 @@ struct token binary_number(struct scanner *scanner)
 {
     while (peek(scanner) == '1' || peek(scanner) == '0') { advance(scanner); }
     if (isdigit(peek(scanner))) {
-        return error_token(scanner, "Invalid binary literal %.*s", scanner->current - scanner->start, scanner->start);
+        return error_token(scanner, "Invalid binary literal");
     }
     return make_token(scanner, TOKEN_NUMBER);
 }

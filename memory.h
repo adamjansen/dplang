@@ -4,7 +4,7 @@
 #include "vm.h"
 
 void *reallocate(void *p, size_t prev_size, size_t new_size);
-void gc_collect();
+void gc_collect(void);
 
 void gc_init(struct vm *vm);
 void gc_mark_object(struct object *object);

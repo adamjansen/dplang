@@ -1311,7 +1311,7 @@ struct object_function *compile(const char *source)
     return parser.had_error ? NULL : func;
 }
 
-void compiler_gc_roots()
+void compiler_gc_roots(void)
 {
     struct compiler *compiler = current;
     while (compiler != NULL) {

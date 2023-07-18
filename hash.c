@@ -32,6 +32,24 @@ hash_t hash_double(double d)
     return cast.ints[0] + cast.ints[1];
 }
 
+static hash_t hash_object(struct object *obj)
+{
+    switch (obj->type) {
+        case OBJECT_STRING:
+            return ((struct object_string *)obj)->hash;
+        case OBJECT_BOUND_METHOD:
+        case OBJECT_CLASS:
+        case OBJECT_CLOSURE:
+        case OBJECT_FUNCTION:
+        case OBJECT_INSTANCE:
+        case OBJECT_NATIVE:
+        case OBJECT_TABLE:
+        case OBJECT_UPVALUE:
+        default:
+            return (hash_t)(uintptr_t)obj;
+    }
+}
+
 // NOLINTBEGIN(readability-magic-numbers)
 hash_t hash_value(value v)
 {
@@ -43,7 +61,7 @@ hash_t hash_value(value v)
         case VAL_NUMBER:
             return hash_double(AS_NUMBER(v));
         case VAL_OBJECT:
-            return AS_STRING(v)->hash;
+            return hash_object(v.as.object);
         case VAL_EMPTY:
             return 0;
         default:

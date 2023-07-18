@@ -92,12 +92,12 @@ struct object_closure *object_closure_new(struct object_function *function);
 struct object_instance *object_instance_new(struct object_class *klass);
 struct object_function *object_function_new(struct object_string *name);
 struct object_native *object_native_new(native_function function);
-struct object_table *object_table_new();
+struct object_table *object_table_new(void);
 struct object_upvalue *object_upvalue_new(value *slot);
 
 #define OBJECT_TYPE(value) (AS_OBJECT(value)->type)
 
-static inline bool is_object_type(value val, enum object_type type)
+__attribute__((__unused__)) static inline bool is_object_type(value val, enum object_type type)
 {
     return IS_OBJECT(val) && AS_OBJECT(val)->type == type;
 }
@@ -129,6 +129,7 @@ struct object_string *object_string_vformat(const char *fmt, va_list ap);
 
 void object_free(struct object *object);
 
+int object_format(char *s, size_t maxlen, struct object *obj);
 int object_print(struct object *obj);
 bool object_equal(struct object *a, struct object *b);
 

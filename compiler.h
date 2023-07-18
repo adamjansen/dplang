@@ -3,6 +3,6 @@
 #include "chunk.h"
 struct object_function *compile(const char *source);
 
-void compiler_gc_roots();
+void compiler_gc_roots(void);
 
 #endif

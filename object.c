@@ -144,7 +144,7 @@ struct object_bound_method *object_bound_method_new(value receiver, struct objec
     return bound;
 }
 
-struct object_table *object_table_new()
+struct object_table *object_table_new(void)
 {
     struct object_table *table = ALLOCATE_OBJECT(struct object_table, OBJECT_TABLE);
     table_init(&table->table);
@@ -203,60 +203,60 @@ struct object_native *object_native_new(native_function function)
     return native;
 }
 
-static void function_print(struct object_function *function)
+static int function_format(char *s, size_t maxlen, struct object_function *function)
 {
-    printf("<%s%s>", (function->name == NULL) ? "script" : "fn ", (function->name == NULL) ? "" : function->name->data);
+    return snprintf(s, maxlen, "<%s%s>", (function->name == NULL) ? "script" : "fn ",
+                    (function->name == NULL) ? "" : function->name->data);
 }
 
-int object_print(struct object *obj)
+int object_format(char *s, size_t maxlen, struct object *obj)
 {
     switch (obj->type) {
         case OBJECT_BOUND_METHOD: {
             struct object_bound_method *bound = (struct object_bound_method *)obj;
-            function_print(bound->method->function);
+            return function_format(s, maxlen, bound->method->function);
             break;
         }
         case OBJECT_CLASS: {
             struct object_class *klass = (struct object_class *)obj;
-            printf("class %s", klass->name->data);
-            break;
+            return snprintf(s, maxlen, "class %s", klass->name->data);
         }
         case OBJECT_INSTANCE: {
             struct object_instance *instance = (struct object_instance *)obj;
-            printf("%s instance %p", instance->klass->name->data, (void *)instance);
-            break;
+            return snprintf(s, maxlen, "%s instance %p", instance->klass->name->data, (void *)instance);
         }
         case OBJECT_STRING: {
-            struct object_string *s = (struct object_string *)obj;
-            printf("%s", s->data);
-            break;
+            struct object_string *string = (struct object_string *)obj;
+            return snprintf(s, maxlen, "%s", string->data);
         }
         case OBJECT_FUNCTION: {
             struct object_function *func = (struct object_function *)obj;
-            function_print(func);
-            break;
+            return function_format(s, maxlen, func);
         }
         case OBJECT_CLOSURE: {
             struct object_closure *closure = (struct object_closure *)obj;
-            function_print(closure->function);
-            break;
+            return function_format(s, maxlen, closure->function);
         }
         case OBJECT_UPVALUE: {
-            printf("upvalue %p", (void *)obj);
-            break;
+            return snprintf(s, maxlen, "<upvalue %p>", (void *)obj);
         }
         case OBJECT_NATIVE: {
-            printf("<native fn> %p", (void *)obj);
-            break;
+            return snprintf(s, maxlen, "<native fn %p>", (void *)obj);
         }
         case OBJECT_TABLE: {
-            printf("table %p", (void *)obj);
-            break;
+            return snprintf(s, maxlen, "<table %p>", (void *)obj);
         }
         default:
-            printf("Unsupported object type");
-            break;
+            return snprintf(s, maxlen, "Unsupported object type");
     }
+}
+
+#define OBJECT_FORMAT_MAX_NUM_CHARS 64
+int object_print(struct object *obj)
+{
+    char buf[OBJECT_FORMAT_MAX_NUM_CHARS];
+    object_format(buf, sizeof(buf), obj);
+    printf("%s", buf);
     return 0;
 }
 
