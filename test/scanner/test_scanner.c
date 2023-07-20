@@ -67,6 +67,19 @@ void test_scan_token_identifiers(void)
                      "b_a_b_l_y_s_h_o_u_l_d_n_o_t_b_e");
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
+
+    // These guys look like they might be keywords, but are too short and don't get compared
+    scanner_init(&s, "c");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
+
+    scanner_init(&s, "f");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
+
+    scanner_init(&s, "t");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
 }
 
 void test_scan_token_number(void)
@@ -81,16 +94,52 @@ void test_scan_token_number(void)
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_MINUS, t.type);
     TEST_ASSERT_EQUAL(1, t.length);
+
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
     TEST_ASSERT_EQUAL_STRING("123.456", t.start);
+}
 
-    // Hexadecimal is valid
-    scanner_init(&s, "0xDEADbeef");
+void test_scan_token_number_scientific_notation(void)
+{
+    scanner_init(&s, "1234.56e-78");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+    TEST_ASSERT_EQUAL_STRING("1234.56e-78", t.start);
+
+    scanner_init(&s, "0.123456e+12");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+    TEST_ASSERT_EQUAL_STRING("0.123456e+12", t.start);
+}
+
+void test_scan_token_number_hex(void)
+{
+    scanner_init(&s, "0x8BADF00D");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+
+    scanner_init(&s, "0XC0FFEE");
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
 
+    scanner_init(&s, "0x");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+}
+
+void test_scan_token_number_bin(void)
+{
     scanner_init(&s, "0b1111000011110000");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+
+    scanner_init(&s, "0B11000011");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+
+    // Scanner doesn't check length
+    scanner_init(&s, "0b111111111111111100000000000000001111111111111111");
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
 }
@@ -165,6 +214,13 @@ void test_scan_token_comment(void)
     TEST_ASSERT_EQUAL(TOKEN_EOF, t.type);
 }
 
+void test_scan_token_comment_eol(void)
+{
+    scanner_init(&s, "//\n");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_EOF, t.type);
+}
+
 void test_scan_token_comment_c_style(void)
 {
     scanner_init(&s, "/* this is a \nmultiline comment */");
@@ -201,13 +257,6 @@ void test_scan_token_plus(void)
     TEST_ASSERT_EQUAL(TOKEN_PLUS, t.type);
 }
 
-void test_scan_token_slash(void)
-{
-    scanner_init(&s, "/");
-    struct token t = scanner_scan_token(&s);
-    TEST_ASSERT_EQUAL(TOKEN_SLASH, t.type);
-}
-
 void test_scan_token_star(void)
 {
     scanner_init(&s, "*");
@@ -220,6 +269,15 @@ void test_scan_token_percent(void)
     scanner_init(&s, "%");
     struct token t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_PERCENT, t.type);
+}
+
+void test_scan_token_slash(void)
+{
+    scanner_init(&s, "/");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_SLASH, t.type);
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_EOF, t.type);
 }
 
 void test_scan_token_caret(void)
@@ -711,6 +769,9 @@ int main(void)
     RUN_TEST(test_scan_token_skips_whitespace);
     RUN_TEST(test_scan_token_identifiers);
     RUN_TEST(test_scan_token_number);
+    RUN_TEST(test_scan_token_number_bin);
+    RUN_TEST(test_scan_token_number_hex);
+    RUN_TEST(test_scan_token_number_scientific_notation);
     RUN_TEST(test_scan_token_binary_number_invalid_literal);
     RUN_TEST(test_scan_token_number_invalid_literal);
     RUN_TEST(test_scan_token_parens);
@@ -719,6 +780,7 @@ int main(void)
     RUN_TEST(test_scan_token_semicolon);
     RUN_TEST(test_scan_token_comma);
     RUN_TEST(test_scan_token_comment);
+    RUN_TEST(test_scan_token_comment_eol);
     RUN_TEST(test_scan_token_comment_c_style);
     RUN_TEST(test_scan_token_comment_c_style_unterminated);
     RUN_TEST(test_scan_token_dot);

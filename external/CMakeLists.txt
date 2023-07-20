@@ -1,3 +1,4 @@
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(UNITY_EXTENSION_MEMORY ON)
+add_compile_definitions(UNITY_INCLUDE_DOUBLE)
 add_subdirectory(Unity)

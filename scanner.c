@@ -1,4 +1,5 @@
 #include "scanner.h"
+#include "util.h"
 #include <stdlib.h>
 #include <math.h>
 #include <errno.h>
@@ -17,34 +18,34 @@ int scanner_init(struct scanner *scanner, const char *source)
     return 0;
 }
 
-static bool is_at_end(struct scanner *scanner)
+static inline bool is_at_end(struct scanner *scanner)
 {
     return *scanner->current == '\0';
 }
 
-static char advance(struct scanner *scanner)
+static inline char advance(struct scanner *scanner)
 {
     char c = *scanner->current;
     scanner->current++;
     return c;
 }
 
-static char peek(struct scanner *scanner)
+static inline char peek(struct scanner *scanner)
 {
     return *scanner->current;
 }
 
-static char peek_next(struct scanner *scanner)
+static inline char peek_next(struct scanner *scanner)
 {
-    if (is_at_end(scanner)) {
+    if (unlikely(is_at_end(scanner))) {
         return '\0';
     }
     return scanner->current[1];
 }
 
-static bool match(struct scanner *scanner, char expected)
+static inline bool match(struct scanner *scanner, char expected)
 {
-    if (is_at_end(scanner)) {
+    if (unlikely(is_at_end(scanner))) {
         return false;
     }
     if (*scanner->current != expected) {
@@ -115,7 +116,7 @@ static void skip_whitespace(struct scanner *scanner)
                             scanner->line++;
                         }
                     }
-                    if (is_at_end(scanner)) {
+                    if (unlikely(is_at_end(scanner))) {
                         return;
                     }
                     advance(scanner);

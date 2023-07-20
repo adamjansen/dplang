@@ -9,7 +9,7 @@ function missing_tests() {
 
     MISSING_TESTS=$(sort tests-defined.txt tests-run.txt | uniq -u)
 
-    #rm tests-defined.txt tests-run.txt
+    rm tests-defined.txt tests-run.txt
     echo ${MISSING_TESTS}
 }
 
