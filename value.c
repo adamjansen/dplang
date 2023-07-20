@@ -19,7 +19,6 @@ int value_array_init(struct value_array *varray)
     varray->count = 0;
     varray->capacity = MIN_VARRAY_SIZE;
     varray->values = (value *)reallocate(NULL, 0, MIN_VARRAY_SIZE * sizeof(value));
-    // TODO: simulate memory allocation failure
     if (unlikely(varray->values == NULL)) {
         return -1;
     }
@@ -95,6 +94,7 @@ int value_print(value val)
     char buf[VALUE_FORMAT_MAX_CHARS];
     // TODO: check for format string overflow
     value_format(buf, sizeof(buf), val);
+    printf("%s", buf);
     return 0;
 }
 

@@ -4,7 +4,7 @@ add_executable(hash_utest
 
 target_link_libraries(hash_utest
     dplanglib
-    Unity
+    unity
 )
 
 add_test(hash hash_utest)

@@ -1,11 +1,3 @@
-add_library(Unity STATIC
-    Unity/src/unity.c
-)
-
-target_include_directories(Unity PUBLIC
-    Unity/src
-)
-
-include_directories(
-    Unity/src
-)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(UNITY_EXTENSION_MEMORY ON)
+add_subdirectory(Unity)

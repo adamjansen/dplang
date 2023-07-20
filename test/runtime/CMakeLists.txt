@@ -3,7 +3,7 @@ add_executable(runtime_utest
 )
 
 target_link_libraries(runtime_utest
-    Unity
+    unity
     dplanglib
 )
 

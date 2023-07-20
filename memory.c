@@ -229,10 +229,6 @@ void *reallocate(void *p, size_t prev_size, size_t new_size)
     }
 #endif
     p = realloc(p, new_size);
-    if (p == NULL) {
-        // TODO: panic! out of memory
-        exit(1);
-    }
 
 #ifdef DEBUG_LOG_GC
     if (prev_size == 0) {

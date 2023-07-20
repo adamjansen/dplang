@@ -158,6 +158,28 @@ void test_scan_token_comma(void)
     TEST_ASSERT_EQUAL(TOKEN_COMMA, t.type);
 }
 
+void test_scan_token_comment(void)
+{
+    scanner_init(&s, "// this is a comment");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_EOF, t.type);
+}
+
+void test_scan_token_comment_c_style(void)
+{
+    scanner_init(&s, "/* this is a \nmultiline comment */");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_EOF, t.type);
+    TEST_ASSERT_EQUAL(2, t.line);
+}
+
+void test_scan_token_comment_c_style_unterminated(void)
+{
+    scanner_init(&s, "/* this comment starts but never ends\neven though\nit spans multiple lines");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_ERROR, t.type);
+}
+
 void test_scan_token_dot(void)
 {
     scanner_init(&s, ".");
@@ -290,6 +312,15 @@ void test_scan_token_string(void)
     struct token t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_STRING, t.type);
     TEST_ASSERT_EQUAL_PTR(s.start, t.start);
+}
+
+void test_scan_token_string_multiline(void)
+{
+    scanner_init(&s, "\"This\n is a \nmulti-line string\"");
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_STRING, t.type);
+    TEST_ASSERT_EQUAL(3, s.line);
+    TEST_ASSERT_EQUAL(1, t.line);
 }
 
 void test_scan_token_string_unterminated(void)
@@ -437,6 +468,10 @@ void test_scan_token_keyword_for(void)
     TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
 
     scanner_init(&s, "workforce");
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
+
+    scanner_init(&s, "free");
     t = scanner_scan_token(&s);
     TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
 }
@@ -650,6 +685,23 @@ void test_scan_token_keyword_while(void)
     TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
 }
 
+void test_scan_token_multiline(void)
+{
+    char *multiline = "a\n123\n";
+    struct scanner s;
+    scanner_init(&s, multiline);
+
+    struct token t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_IDENTIFIER, t.type);
+    TEST_ASSERT_EQUAL_STRING_LEN("a", t.start, t.length);
+    TEST_ASSERT_EQUAL(1, t.line);
+
+    t = scanner_scan_token(&s);
+    TEST_ASSERT_EQUAL(TOKEN_NUMBER, t.type);
+    TEST_ASSERT_EQUAL_STRING_LEN("123", t.start, t.length);
+    TEST_ASSERT_EQUAL(2, t.line);
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -666,6 +718,9 @@ int main(void)
     RUN_TEST(test_scan_token_bracket);
     RUN_TEST(test_scan_token_semicolon);
     RUN_TEST(test_scan_token_comma);
+    RUN_TEST(test_scan_token_comment);
+    RUN_TEST(test_scan_token_comment_c_style);
+    RUN_TEST(test_scan_token_comment_c_style_unterminated);
     RUN_TEST(test_scan_token_dot);
     RUN_TEST(test_scan_token_minus);
     RUN_TEST(test_scan_token_plus);
@@ -703,6 +758,10 @@ int main(void)
     RUN_TEST(test_scan_token_keyword_true);
     RUN_TEST(test_scan_token_keyword_var);
     RUN_TEST(test_scan_token_keyword_while);
+    RUN_TEST(test_scan_token_string);
+    RUN_TEST(test_scan_token_string_multiline);
+    RUN_TEST(test_scan_token_string_unterminated);
+    RUN_TEST(test_scan_token_multiline);
 
     return UNITY_END();
 }

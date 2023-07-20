@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "unity.h"
+#include "unity_memory.h"
 
 #include "util.h"
 #include "value.h"
@@ -14,9 +15,47 @@ void tearDown(void)
 {
 }
 
+void test_number_equal(void)
+{
+    TEST_ASSERT(value_equal(NUMBER_VAL(1234.567), NUMBER_VAL(1234.567)));
+}
+
 void test_nil_equal(void)
 {
     TEST_ASSERT(value_equal(NIL_VAL, NIL_VAL));
+}
+
+void test_empty_equal(void)
+{
+    TEST_ASSERT(value_equal(EMPTY_VAL, EMPTY_VAL));
+}
+
+void test_object_equal(void)
+{
+    struct object o1 = {
+        .type = 99999,
+    };
+
+    struct object o2 = {
+        .type = 11111,
+    };
+
+    TEST_ASSERT_FALSE(value_equal(OBJECT_VAL(&o1), OBJECT_VAL(&o2)));
+}
+
+void test_unknown_equal(void)
+{
+    value v1 = {
+        .type = 9999,
+        .as.number = 0,
+    };
+
+    value v2 = {
+        .type = 9999,
+        .as.number = 0,
+    };
+
+    TEST_ASSERT_FALSE(value_equal(v1, v2));
 }
 
 void test_bool_equal(void)
@@ -111,6 +150,18 @@ void test_array_null_fails(void)
     TEST_ASSERT(value_array_init(NULL) < 0);
 }
 
+#if 0
+void test_array_alloc_fail(void)
+{
+    UnityMalloc_StartTest();
+    UnityMalloc_MakeMallocFailAfterCount(0);
+    struct value_array varray;
+    TEST_ASSERT_EQUAL(-1, value_array_init(&varray));
+    TEST_ASSERT_NULL(varray.values);
+    UnityMalloc_EndTest();
+}
+#endif
+
 void test_array_basic(void)
 {
     struct value_array varray;
@@ -130,6 +181,11 @@ void test_array_basic(void)
     TEST_ASSERT_NULL(varray.values);
 }
 
+void test_array_write_null(void)
+{
+    TEST_ASSERT_EQUAL(-1, value_array_write(NULL, NUMBER_VAL(0)));
+}
+
 void test_array_grow(void)
 {
     struct value_array varray;
@@ -147,7 +203,11 @@ int main(void)
 {
     UNITY_BEGIN();
 
+    RUN_TEST(test_number_equal);
     RUN_TEST(test_nil_equal);
+    RUN_TEST(test_unknown_equal);
+    RUN_TEST(test_object_equal);
+    RUN_TEST(test_empty_equal);
     RUN_TEST(test_different_types_equal);
     RUN_TEST(test_bool_equal);
 
@@ -158,7 +218,9 @@ int main(void)
     RUN_TEST(test_format_empty);
     RUN_TEST(test_format_unknown);
 
+    // RUN_TEST(test_array_alloc_fail);
     RUN_TEST(test_array_null_fails);
+    RUN_TEST(test_array_write_null);
     RUN_TEST(test_array_basic);
     RUN_TEST(test_array_grow);
 

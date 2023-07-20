@@ -13,6 +13,7 @@ int scanner_init(struct scanner *scanner, const char *source)
     scanner->start = source;
     scanner->current = source;
     scanner->line = 1;
+    scanner->inside_comment = false;
     return 0;
 }
 
@@ -104,14 +105,22 @@ static void skip_whitespace(struct scanner *scanner)
                 advance(scanner);
                 break;
             case '/':
-                if (peek_next(scanner) == '/') { /* comment until end of line */
+                if (peek_next(scanner) == '/') {         /* comment until end of line */
                     while (peek(scanner) != '\n' && !is_at_end(scanner)) { advance(scanner); }
                 } else if (peek_next(scanner) == '*') {  // comment until */ sequence
+                    scanner->inside_comment = true;
                     while (!is_at_end(scanner) && !(peek(scanner) == '*' && peek_next(scanner) == '/')) {
                         advance(scanner);
+                        if (peek(scanner) == '\n') {
+                            scanner->line++;
+                        }
+                    }
+                    if (is_at_end(scanner)) {
+                        return;
                     }
                     advance(scanner);
                     advance(scanner);
+                    scanner->inside_comment = false;
                 } else {
                     return;
                 }
@@ -253,6 +262,7 @@ struct token number(struct scanner *scanner)
 
 struct token string(struct scanner *scanner)
 {
+    int line_start = scanner->line;
     while (peek(scanner) != '"' && !is_at_end(scanner)) {
         if (peek(scanner) == '\n') {
             scanner->line++;
@@ -264,12 +274,18 @@ struct token string(struct scanner *scanner)
     }
 
     advance(scanner);
-    return make_token(scanner, TOKEN_STRING);
+    struct token t = make_token(scanner, TOKEN_STRING);
+    // Change the line to be the line the token started on
+    t.line = line_start;
+    return t;
 }
 
 struct token scanner_scan_token(struct scanner *scanner)
 {
     skip_whitespace(scanner);
+    if (scanner->inside_comment) {
+        return error_token(scanner, "Unterminated multiline comment");
+    }
     scanner->start = scanner->current;
     if (is_at_end(scanner)) {
         return make_token(scanner, TOKEN_EOF);

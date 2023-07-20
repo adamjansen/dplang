@@ -2,11 +2,13 @@
 #define DPLANG_SCANNER_H
 
 #include <stddef.h>
+#include <stdbool.h>
 
 struct scanner {
     const char *start;
     const char *current;
     int line;
+    bool inside_comment;
 };
 
 enum token_type {

@@ -39,6 +39,9 @@ option(BUILD_TESTS "Build the test suite" ON)
 
 if (BUILD_TESTS)
   enable_testing()
+
+  add_subdirectory(test)
+
   if (CODE_COVERAGE)
     include(CodeCoverage)
     append_coverage_compiler_flags()
@@ -47,24 +50,12 @@ if (BUILD_TESTS)
       EXECUTABLE ctest -j${NPROC}
       EXCLUDE "test/*"
     )
-    find_program(pycobertura pycobertura)
-    if(NOT pycobertura MATCHES "NOTFOUND")
-      set (PYCOBERTURA "${pycobertura}"
-          "show"
-          "--source" "${CMAKE_CURRENT_SOURCE_DIR}"
-          "--output" "coverage.html"
-          "--format=html"
-          "coverage.xml"
-      )
-      add_custom_target(coverage_html
-          COMMAND ${PYCOBERTURA}
-          DEPENDS coverage
-          WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-          COMMENT "Preparing HTML report"
-          VERBATIM)
-      endif()
+  setup_target_for_coverage_gcovr_html(
+    NAME coverage_html
+    EXECUTABLE ctest -j${NPROC}
+    EXCLUDE "test/*"
+    )
   endif()
-  add_subdirectory(test)
 endif()
 
 
@@ -73,8 +64,7 @@ set(CLANG_TIDY_COMMAND "${CLANG_TIDY_EXE}" "-checks=-*,bugprone-*,portability-*,
 
 set(CMAKE_C_FLAGS "-Wall -Wextra -pedantic")
 set(CMAKE_C_FLAGS_RELEASE "-O3")
-
-
+set(CMAKE_C_FLAGS_DEBUG "-O0 -fprofile-arcs -ftest-coverage -g")
 add_library(dplanglib STATIC chunk.c compiler.c memory.c scanner.c value.c vm.c object.c table.c hash.c parser.c builtins.c)
 
 add_executable(dplang chunk.c compiler.c main.c memory.c scanner.c value.c vm.c object.c table.c hash.c parser.c builtins.c)

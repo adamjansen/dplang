@@ -1,7 +1,9 @@
-#include "memory.h"
-#include "table.h"
 #include <string.h>
 #include <stdio.h>
+
+#include "util.h"
+#include "memory.h"
+#include "table.h"
 
 #define TABLE_MAX_LOAD 75
 
@@ -26,6 +28,9 @@ static inline int table_next_size(struct table *table)
 
 int table_init(struct table *table)
 {
+    if (unlikely(table == NULL)) {
+        return -1;
+    }
     table->count = 0;
     table->capacity = 0;
     table->entries = NULL;
@@ -34,6 +39,9 @@ int table_init(struct table *table)
 
 void table_free(struct table *table)
 {
+    if (unlikely(table == NULL)) {
+        return;
+    }
     table->entries = (struct entry *)reallocate(table->entries, table->capacity * sizeof(struct entry), 0);
     table->capacity = 0;
     table->count = 0;
@@ -91,6 +99,9 @@ static void adjust_capacity(struct table *table)
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 void table_add_all(struct table *from, struct table *to)
 {
+    if (unlikely(from == NULL) || unlikely(to == NULL) || unlikely(from == to)) {
+        return;
+    }
     for (int i = 0; i < from->capacity; i++) {
         struct entry *entry = &from->entries[i];
         if (!IS_EMPTY(entry->key)) {
@@ -103,7 +114,7 @@ void table_add_all(struct table *from, struct table *to)
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 struct object_string *table_find_string(struct table *table, const char *chars, size_t length, hash_t hash)
 {
-    if (table->count == 0) {
+    if (unlikely(table == NULL) || table->count == 0) {
         return NULL;
     }
 
@@ -111,7 +122,7 @@ struct object_string *table_find_string(struct table *table, const char *chars, 
 
     while (1) {
         struct entry *entry = &table->entries[index];
-        if (IS_EMPTY(entry->key)) {
+        if (IS_EMPTY(entry->key) || !is_object_type(entry->key, OBJECT_STRING)) {
             return NULL;
         }
         struct object_string *string = AS_STRING(entry->key);
@@ -127,11 +138,16 @@ struct object_string *table_find_string(struct table *table, const char *chars, 
 // NOLINTBEGIN(bugprone-easily-swappable-parameters)
 bool table_set(struct table *table, value key, value value)
 {
+    if (unlikely(table == NULL)) {
+        return false;
+    }
+
     int load = table_load(table);
     if (load > TABLE_MAX_LOAD) {
         adjust_capacity(table);
     }
     struct entry *entry = find_entry(table->entries, table->capacity, key);
+    // It's a new key if there's no entry there, or if it's a tombstone
     bool is_new_key = IS_EMPTY(entry->key);
 
     entry->key = key;
@@ -145,7 +161,7 @@ bool table_set(struct table *table, value key, value value)
 
 bool table_get(struct table *table, value key, value *value)
 {
-    if (table->count == 0) {
+    if (unlikely(table == NULL) || unlikely(value == NULL) || table->count == 0) {
         return false;
     }
 
@@ -160,6 +176,10 @@ bool table_get(struct table *table, value key, value *value)
 
 bool table_delete(struct table *table, value key)
 {
+    if (unlikely(table == NULL)) {
+        return false;
+    }
+
     if (table->count == 0) {
         return false;
     }
@@ -167,6 +187,8 @@ bool table_delete(struct table *table, value key)
     if (IS_EMPTY(entry->key)) {
         return false;
     }
+
+    table->count--;
 
     // Tombstone sentinel value
     entry->key = EMPTY_VAL;
@@ -176,6 +198,9 @@ bool table_delete(struct table *table, value key)
 
 void table_dump(struct table *table)
 {
+    if (unlikely(table == NULL)) {
+        return;
+    }
     for (int i = 0; i < table->capacity; i++) {
         struct entry *entry = &table->entries[i];
         if (!IS_EMPTY(entry->key)) {

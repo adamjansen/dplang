@@ -41,9 +41,14 @@ void test_bool_true(void)
     TEST_ASSERT_EQUAL(3, hash_value(BOOL_VAL(true)));
 }
 
-void test_empty(void)
+void test_nil(void)
 {
     TEST_ASSERT_EQUAL(7, hash_value(NIL_VAL));
+}
+
+void test_empty(void)
+{
+    TEST_ASSERT_EQUAL(0, hash_value(EMPTY_VAL));
 }
 
 void test_invalid(void)
@@ -64,6 +69,25 @@ void test_object(void)
     TEST_ASSERT_EQUAL((hash_t)(uintptr_t)(void *)&obj, hash_value(v));
 }
 
+void test_object_string(void)
+{
+    // Here we're just testing that hashing a string object returns the stored
+    // string hash; we're not actually verifying that is the correct hash
+    struct object_string s = {
+        .object =
+            {
+                     .type = OBJECT_STRING,
+                     .next = NULL,
+                     .marked = false,
+                     },
+        .data = "abc123",
+        .hash = 0xDEADBEEF,
+        .length = 6,
+    };
+    value v = OBJECT_VAL(&s.object);
+    TEST_ASSERT_EQUAL_HEX32(0xDEADBEEF, hash_value(v));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
@@ -75,8 +99,10 @@ int main(void)
     RUN_TEST(test_bool_false);
     RUN_TEST(test_bool_true);
     RUN_TEST(test_empty);
+    RUN_TEST(test_nil);
     RUN_TEST(test_invalid);
     RUN_TEST(test_object);
+    RUN_TEST(test_object_string);
 
     return UNITY_END();
 }

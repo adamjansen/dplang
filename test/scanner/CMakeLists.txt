@@ -3,7 +3,7 @@ add_executable(scanner_utest
 )
 
 target_link_libraries(scanner_utest
-    Unity
+    unity
     dplanglib
 )
 
