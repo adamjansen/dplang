@@ -84,6 +84,21 @@ static struct token error_token(struct scanner *scanner, const char *format, ...
     return token;
 }
 
+static void line_comment(struct scanner *scanner)
+{
+    while (peek(scanner) != '\n' && !is_at_end(scanner)) { advance(scanner); }
+}
+
+static void block_comment(struct scanner *scanner)
+{
+    while (!is_at_end(scanner) && !(peek(scanner) == '*' && peek_next(scanner) == '/')) {
+        advance(scanner);
+        if (peek(scanner) == '\n') {
+            scanner->line++;
+        }
+    }
+}
+
 /**
  * Ignores all whitespace in input.
  * Also keeps track of input line number.
@@ -107,15 +122,10 @@ static void skip_whitespace(struct scanner *scanner)
                 break;
             case '/':
                 if (peek_next(scanner) == '/') {         /* comment until end of line */
-                    while (peek(scanner) != '\n' && !is_at_end(scanner)) { advance(scanner); }
+                    line_comment(scanner);
                 } else if (peek_next(scanner) == '*') {  // comment until */ sequence
                     scanner->inside_comment = true;
-                    while (!is_at_end(scanner) && !(peek(scanner) == '*' && peek_next(scanner) == '/')) {
-                        advance(scanner);
-                        if (peek(scanner) == '\n') {
-                            scanner->line++;
-                        }
-                    }
+                    block_comment(scanner);
                     if (unlikely(is_at_end(scanner))) {
                         return;
                     }
